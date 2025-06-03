@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openai'
 import pdf from 'pdf-parse'
 import { RecursiveCharacterTextSplitter, CharacterTextSplitter } from 'langchain/text_splitter'
 
 export async function POST(request: NextRequest) {
   try {
+    // Get server-side Supabase client
+    const supabase = createServerSupabaseClient()
+    
     const formData = await request.formData()
     const files = formData.getAll('files') as File[]
     const metadataStr = formData.get('metadata') as string

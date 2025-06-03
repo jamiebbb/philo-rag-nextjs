@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding, generateChatCompletion } from '@/lib/openai'
+import { getRelevantFeedback } from '@/lib/feedback'
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, chatId, relevantFeedback } = await request.json()
+    const { message, chatId } = await request.json()
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
@@ -12,6 +13,9 @@ export async function POST(request: NextRequest) {
 
     // Get server-side Supabase client
     const supabase = createServerSupabaseClient()
+
+    // Get relevant feedback for context (server-side)
+    const relevantFeedback = await getRelevantFeedback(message.trim(), 3)
 
     // Generate embedding for the user's message
     const queryEmbedding = await generateEmbedding(message)

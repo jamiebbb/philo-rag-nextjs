@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding, generateChatCompletion } from '@/lib/openai'
 import { 
   extractVideoId, 
@@ -14,6 +14,9 @@ import { Document } from 'langchain/document'
 
 export async function POST(request: NextRequest) {
   try {
+    // Get server-side Supabase client
+    const supabase = createServerSupabaseClient()
+    
     const { 
       url, 
       title, 

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, Star, MessageSquare } from 'lucide-react'
 import { ChatMessage, DocumentSource } from '@/types'
 import { formatDate } from '@/lib/utils'
-import { storeFeedback, storeDetailedFeedback, getRelevantFeedback } from '@/lib/feedback'
+import { storeFeedback, storeDetailedFeedback } from '@/lib/feedback'
 import { v4 as uuidv4 } from 'uuid'
 
 export function ChatInterface() {
@@ -25,15 +25,15 @@ export function ChatInterface() {
 
   const handleFeedback = async (messageId: string, feedbackType: 'helpful' | 'not_helpful' | 'partial') => {
     const message = messages.find(m => m.id === messageId)
-    if (!message || message.role !== 'assistant') return
+    if (!message) return
 
-    const userMessage = messages[messages.indexOf(message) - 1]
-    const userQuery = userMessage?.content || ''
+    const userQuery = messages.find(m => 
+      messages.indexOf(m) === messages.indexOf(message) - 1 && m.role === 'user'
+    )?.content || ''
 
     const success = await storeFeedback(userQuery, message.content, feedbackType, chatId)
     
     if (success) {
-      // Update message with feedback
       setMessages(prev => prev.map(m => 
         m.id === messageId 
           ? { ...m, feedback: { type: feedbackType, timestamp: new Date() } }
@@ -48,10 +48,11 @@ export function ChatInterface() {
     comment: string
   ) => {
     const message = messages.find(m => m.id === messageId)
-    if (!message || message.role !== 'assistant') return
+    if (!message) return
 
-    const userMessage = messages[messages.indexOf(message) - 1]
-    const userQuery = userMessage?.content || ''
+    const userQuery = messages.find(m => 
+      messages.indexOf(m) === messages.indexOf(message) - 1 && m.role === 'user'
+    )?.content || ''
 
     const success = await storeDetailedFeedback(userQuery, message.content, rating, comment, chatId)
     
@@ -82,9 +83,6 @@ export function ChatInterface() {
     setIsLoading(true)
 
     try {
-      // Get relevant feedback for context
-      const relevantFeedback = await getRelevantFeedback(input.trim(), 3)
-      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -92,8 +90,7 @@ export function ChatInterface() {
         },
         body: JSON.stringify({ 
           message: input.trim(),
-          chatId,
-          relevantFeedback: relevantFeedback.length > 0 ? relevantFeedback : undefined
+          chatId
         }),
       })
 

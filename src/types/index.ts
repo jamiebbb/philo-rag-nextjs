@@ -42,7 +42,12 @@ export interface ChatMessage {
   content: string
   timestamp: Date
   sources?: DocumentSource[]
-  feedback?: FeedbackType
+  feedback?: {
+    type: 'helpful' | 'not_helpful' | 'partial' | 'detailed'
+    rating?: number
+    comment?: string
+    timestamp: Date
+  }
 }
 
 export interface DocumentSource {

@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, createServerSupabaseClient } from './supabase'
 import { DocumentStats, Document, DocumentFilter } from '@/types'
 import CryptoJS from 'crypto-js'
 
@@ -26,6 +26,18 @@ export interface DocumentRecord {
 }
 
 /**
+ * Get the appropriate Supabase client based on environment
+ */
+function getSupabaseClient() {
+  // Check if we're in a server environment (API route)
+  if (typeof window === 'undefined') {
+    return createServerSupabaseClient()
+  }
+  // Client-side environment
+  return supabase
+}
+
+/**
  * Calculate file hash for duplicate detection
  */
 export function calculateFileHash(fileContent: ArrayBuffer | string): string {
@@ -42,13 +54,15 @@ export async function addDocumentRecord(
   documentData: Omit<DocumentRecord, 'id' | 'upload_date' | 'created_at'>
 ): Promise<string | null> {
   try {
+    const client = getSupabaseClient()
+    
     const record: DocumentRecord = {
       ...documentData,
       upload_date: new Date().toISOString(),
       created_at: new Date().toISOString()
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('document_tracker')
       .insert(record)
       .select('id')
@@ -74,9 +88,10 @@ export async function isDuplicateFile(
   fileName?: string
 ): Promise<{ isDuplicate: boolean; existingRecord?: DocumentRecord }> {
   try {
+    const client = getSupabaseClient()
     const fileHash = calculateFileHash(fileContent)
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('document_tracker')
       .select('*')
       .eq('file_hash', fileHash)
@@ -106,7 +121,9 @@ export async function isDuplicateUrl(
   videoId?: string
 ): Promise<{ isDuplicate: boolean; existingRecord?: DocumentRecord }> {
   try {
-    let query = supabase
+    const client = getSupabaseClient()
+    
+    let query = client
       .from('document_tracker')
       .select('*')
 
@@ -139,7 +156,9 @@ export async function isDuplicateUrl(
  */
 export async function getAllDocuments(): Promise<DocumentRecord[]> {
   try {
-    const { data, error } = await supabase
+    const client = getSupabaseClient()
+    
+    const { data, error } = await client
       .from('document_tracker')
       .select('*')
       .order('created_at', { ascending: false })
@@ -164,7 +183,9 @@ export async function searchDocuments(
   filters?: DocumentFilter
 ): Promise<DocumentRecord[]> {
   try {
-    let dbQuery = supabase
+    const client = getSupabaseClient()
+    
+    let dbQuery = client
       .from('document_tracker')
       .select('*')
 
@@ -213,7 +234,9 @@ export async function searchDocuments(
  */
 export async function getDocumentStats(): Promise<DocumentStats> {
   try {
-    const { data, error } = await supabase
+    const client = getSupabaseClient()
+    
+    const { data, error } = await client
       .from('document_tracker')
       .select('type, difficulty, source_type, genre, chunks')
 
@@ -278,7 +301,9 @@ export async function getDocumentStats(): Promise<DocumentStats> {
  */
 export async function removeDocument(documentId: string): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const client = getSupabaseClient()
+    
+    const { error } = await client
       .from('document_tracker')
       .delete()
       .eq('id', documentId)
@@ -303,7 +328,9 @@ export async function updateDocumentMetadata(
   updates: Partial<DocumentRecord>
 ): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const client = getSupabaseClient()
+    
+    const { error } = await client
       .from('document_tracker')
       .update(updates)
       .eq('id', documentId)
@@ -325,8 +352,10 @@ export async function updateDocumentMetadata(
  */
 export async function syncWithEnhancedTable(): Promise<boolean> {
   try {
+    const client = getSupabaseClient()
+    
     // Get unique documents from enhanced table
-    const { data: enhancedDocs, error: enhancedError } = await supabase
+    const { data: enhancedDocs, error: enhancedError } = await client
       .from('documents_enhanced')
       .select('title, author, doc_type, genre, topic, difficulty, tags, source_type, summary')
 
@@ -350,7 +379,7 @@ export async function syncWithEnhancedTable(): Promise<boolean> {
     })
 
     // Check which documents are missing from tracker
-    const { data: trackerDocs, error: trackerError } = await supabase
+    const { data: trackerDocs, error: trackerError } = await client
       .from('document_tracker')
       .select('title')
 
@@ -378,7 +407,7 @@ export async function syncWithEnhancedTable(): Promise<boolean> {
       }))
 
     if (missingDocs.length > 0) {
-      const { error: insertError } = await supabase
+      const { error: insertError } = await client
         .from('document_tracker')
         .insert(missingDocs)
 
