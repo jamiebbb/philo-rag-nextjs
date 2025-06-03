@@ -122,7 +122,7 @@ export interface ChunkStats {
 }
 
 export interface FeedbackType {
-  type: 'helpful' | 'not_helpful' | 'partial'
+  type: 'helpful' | 'not_helpful' | 'partial' | 'detailed'
   rating?: number
   comment?: string
   timestamp: Date
