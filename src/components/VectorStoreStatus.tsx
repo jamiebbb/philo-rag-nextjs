@@ -175,11 +175,11 @@ export function VectorStoreStatus() {
         </button>
       </div>
 
-      {/* Help Section */}
+      {/* Help Section - Rewritten to avoid quotes */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
         <h4 className="font-medium text-gray-900 mb-2">Troubleshooting</h4>
         <div className="text-sm text-gray-600 space-y-1">
-          <p>• If the vector store shows as &quot;Failed&quot;, check your Supabase configuration</p>
+          <p>• If the vector store shows as Failed, check your Supabase configuration</p>
           <p>• Ensure the documents_enhanced table exists in your database</p>
           <p>• Verify your environment variables are set correctly</p>
           <p>• Check the browser console for detailed error messages</p>

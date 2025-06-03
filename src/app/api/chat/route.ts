@@ -29,9 +29,9 @@ export async function POST(request: NextRequest) {
         .limit(5)
       
       if (fallbackError) {
-        return NextResponse.json({ error: 'Failed to search documents' }, { status: 500 })
-      }
-      
+      return NextResponse.json({ error: 'Failed to search documents' }, { status: 500 })
+    }
+
       console.log('Using fallback document search')
       // Use fallback documents
       documents = fallbackDocs
