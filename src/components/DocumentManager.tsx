@@ -220,7 +220,9 @@ export function DocumentManager() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Updated</label>
-                    <p className="text-gray-900">{formatDate(selectedDoc.updated_at)}</p>
+                    <p className="text-gray-900">
+                      {selectedDoc.updated_at ? formatDate(selectedDoc.updated_at) : 'Never'}
+                    </p>
                   </div>
                 </div>
               </div>
