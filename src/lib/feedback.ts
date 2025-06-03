@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, createServerSupabaseClient } from './supabase'
 import { FeedbackType } from '@/types'
 import { generateEmbedding } from './openai'
 
@@ -15,6 +15,18 @@ export interface FeedbackRecord {
 }
 
 /**
+ * Get the appropriate Supabase client based on environment
+ */
+function getSupabaseClient() {
+  // Check if we're in a server environment (API route)
+  if (typeof window === 'undefined') {
+    return createServerSupabaseClient()
+  }
+  // Client-side environment
+  return supabase
+}
+
+/**
  * Store user feedback in Supabase
  */
 export async function storeFeedback(
@@ -26,6 +38,8 @@ export async function storeFeedback(
   comment?: string
 ): Promise<boolean> {
   try {
+    const client = getSupabaseClient()
+    
     const feedbackData: FeedbackRecord = {
       user_query: userQuery,
       ai_response: aiResponse,
@@ -44,7 +58,7 @@ export async function storeFeedback(
       console.warn('Failed to generate embedding for feedback:', error)
     }
 
-    const { error } = await supabase
+    const { error } = await client
       .from('feedback')
       .insert(feedbackData)
 
@@ -81,11 +95,13 @@ export async function getRelevantFeedback(
   limit: number = 5
 ): Promise<FeedbackRecord[]> {
   try {
+    const client = getSupabaseClient()
+    
     // Generate embedding for similarity search
     const queryEmbedding = await generateEmbedding(query)
 
     // First try to get feedback with embeddings using RPC function
-    const { data: embeddingResults, error: embeddingError } = await supabase
+    const { data: embeddingResults, error: embeddingError } = await client
       .rpc('match_feedback_by_embedding', {
         query_embedding: queryEmbedding,
         match_threshold: 0.7,
@@ -99,7 +115,7 @@ export async function getRelevantFeedback(
     }
 
     // Fallback: search by text similarity
-    const { data: textResults, error: textError } = await supabase
+    const { data: textResults, error: textError } = await client
       .from('feedback')
       .select('*')
       .textSearch('user_query', query)
@@ -124,7 +140,9 @@ export async function getRelevantFeedback(
  */
 export async function testFeedbackConnection(): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const client = getSupabaseClient()
+    
+    const { error } = await client
       .from('feedback')
       .select('id')
       .limit(1)
@@ -150,7 +168,9 @@ export async function getFeedbackStats(): Promise<{
   recent_count: number
 }> {
   try {
-    const { data, error } = await supabase
+    const client = getSupabaseClient()
+    
+    const { data, error } = await client
       .from('feedback')
       .select('feedback_type, created_at')
 

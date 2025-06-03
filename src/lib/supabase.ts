@@ -1,18 +1,40 @@
 import { createClient } from '@supabase/supabase-js'
 
+// Client-side Supabase (safe for browser)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables. Please check your .env.local file.')
+if (!supabaseUrl) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+if (!supabaseAnonKey) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
+}
+
+// Client-side Supabase client (for browser/React components)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
   }
 })
+
+// Server-side Supabase client (for API routes only)
+export const createServerSupabaseClient = () => {
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY!
+  
+  if (!serviceKey) {
+    throw new Error('Missing SUPABASE_SERVICE_KEY environment variable')
+  }
+  
+  return createClient(supabaseUrl, serviceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  })
+}
 
 // Types for our database tables
 export interface DatabaseDocument {

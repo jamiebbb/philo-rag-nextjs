@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding, generateChatCompletion } from '@/lib/openai'
 
 export async function POST(request: NextRequest) {
@@ -9,6 +9,9 @@ export async function POST(request: NextRequest) {
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
+
+    // Get server-side Supabase client
+    const supabase = createServerSupabaseClient()
 
     // Generate embedding for the user's message
     const queryEmbedding = await generateEmbedding(message)
