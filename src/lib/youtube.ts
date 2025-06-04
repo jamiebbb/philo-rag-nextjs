@@ -72,23 +72,44 @@ export async function getYouTubeMetadata(videoId: string): Promise<Partial<YouTu
  */
 export async function getYouTubeTranscript(videoId: string): Promise<string | null> {
   try {
+    console.log('SUPADATA_API_KEY available:', !!SUPADATA_API_KEY)
+    console.log('SUPADATA_API_KEY length:', SUPADATA_API_KEY?.length || 0)
+    
+    if (!SUPADATA_API_KEY) {
+      console.error('SUPADATA_API_KEY is not configured')
+      return null
+    }
+    
     const apiUrl = `${SUPADATA_API_URL}${SUPADATA_TRANSCRIPT_ENDPOINT}`
+    console.log('Making request to:', apiUrl)
+    console.log('Video ID:', videoId)
     
     const response = await axios.get(apiUrl, {
       params: { videoId },
       headers: { 'X-API-Key': SUPADATA_API_KEY }
     })
     
+    console.log('SUPADATA API response status:', response.status)
+    console.log('SUPADATA API response data:', response.data)
+    
     if (response.status === 200 && response.data?.content) {
       const transcript = response.data.content
         .map((segment: any) => segment.text || '')
         .join(' ')
+      console.log('Transcript extracted, length:', transcript.length)
       return transcript
     }
     
+    console.log('No content found in response or bad status')
     return null
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error getting transcript:', error)
+    console.error('Error details:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    })
     return null
   }
 }
