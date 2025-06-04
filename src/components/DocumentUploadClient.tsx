@@ -36,8 +36,8 @@ export default function DocumentUploadClient() {
   })
   
   const [splitterType, setSplitterType] = useState<'recursive' | 'character' | 'markdown' | 'html'>('recursive')
-  const [chunkSize, setChunkSize] = useState(1000)
-  const [chunkOverlap, setChunkOverlap] = useState(200)
+  const [chunkSize, setChunkSize] = useState(5000)
+  const [chunkOverlap, setChunkOverlap] = useState(500)
   
   const [isProcessing, setIsProcessing] = useState(false)
   const [processedData, setProcessedData] = useState<{
@@ -217,22 +217,8 @@ export default function DocumentUploadClient() {
         progress: 100 
       })
 
-      // Reset form after successful upload
-      setTimeout(() => {
-        setFiles([])
-        setProcessedData(null)
-        setProgress(null)
-        setMetadata({
-          title: '',
-          author: '',
-          summary: '',
-          genre: 'Educational',
-          topic: '',
-          tags: '',
-          difficulty: 'Intermediate',
-          doc_type: 'Book'
-        })
-      }, 3000)
+      // DON'T auto-reset - let user decide when to upload another document
+      console.log('✅ Upload completed:', result)
 
     } catch (error) {
       console.error('Upload error:', error)
@@ -278,6 +264,23 @@ export default function DocumentUploadClient() {
       console.error('Debug test error:', error)
       alert(`Debug test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
+  }
+
+  const resetForNewUpload = () => {
+    setFiles([])
+    setProcessedData(null)
+    setProgress(null)
+    setError('')
+    setMetadata({
+      title: '',
+      author: '',
+      summary: '',
+      genre: 'Educational',
+      topic: '',
+      tags: '',
+      difficulty: 'Intermediate',
+      doc_type: 'Book'
+    })
   }
 
   return (
@@ -553,35 +556,48 @@ export default function DocumentUploadClient() {
         {/* Action Buttons */}
         {files.length > 0 && (
           <div className="mt-6 flex gap-4">
-            <button
-              onClick={processFiles}
-              disabled={!metadata.title || isProcessing}
-              className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <Eye className="w-4 h-4" />
-              {isProcessing ? 'Processing...' : 'Process Files'}
-            </button>
-
-            {processedData && (
+            {/* Show upload another button if upload is complete */}
+            {progress?.stage === 'complete' ? (
               <button
-                onClick={uploadToVectorStore}
-                disabled={progress?.stage === 'uploading'}
-                className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                onClick={resetForNewUpload}
+                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center gap-2"
               >
-                <Send className="w-4 h-4" />
-                {progress?.stage === 'uploading' ? 'Uploading...' : 'Upload to Vector Store'}
+                <Upload className="w-4 h-4" />
+                📄 Upload Another Document
               </button>
-            )}
+            ) : (
+              <>
+                <button
+                  onClick={processFiles}
+                  disabled={!metadata.title || isProcessing}
+                  className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  {isProcessing ? 'Processing...' : 'Process Files'}
+                </button>
 
-            {processedData && (
-              <button
-                onClick={debugTestUpload}
-                disabled={progress?.stage === 'uploading'}
-                className="px-6 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <Eye className="w-4 h-4" />
-                {progress?.stage === 'uploading' ? 'Testing...' : 'Debug Test Upload'}
-              </button>
+                {processedData && (
+                  <button
+                    onClick={uploadToVectorStore}
+                    disabled={progress?.stage === 'uploading'}
+                    className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    {progress?.stage === 'uploading' ? 'Uploading...' : 'Upload to Vector Store'}
+                  </button>
+                )}
+
+                {processedData && (
+                  <button
+                    onClick={debugTestUpload}
+                    disabled={progress?.stage === 'uploading'}
+                    className="px-6 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    {progress?.stage === 'uploading' ? 'Testing...' : 'Debug Test Upload'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

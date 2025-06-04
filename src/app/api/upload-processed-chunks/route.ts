@@ -83,10 +83,11 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
       
-      console.log(`📊 Processing chunk ${i + 1}/${chunks.length} - Length: ${chunk?.content?.length || 'N/A'}`)
+      console.log(`📊 Processing chunk ${i + 1}/${chunks.length} - Content length: ${chunk?.content?.length || 'N/A'}`)
+      console.log(`📊 Chunk structure:`, Object.keys(chunk || {}))
       
       if (!chunk.content || typeof chunk.content !== 'string') {
-        console.warn(`⚠️ Skipping invalid chunk ${i}: content type = ${typeof chunk.content}, length = ${chunk.content?.length}`)
+        console.warn(`⚠️ Skipping invalid chunk ${i}: content type = ${typeof chunk.content}, content = ${JSON.stringify(chunk).substring(0, 200)}`)
         continue
       }
 
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
             metadata: {
               ...metadata,
               chunk_index: i,
-              chunk_length: chunk.length,
+              chunk_length: chunk.content.length, // Use content.length instead of chunk.length
               parent_document: documentId,
               client_side_processed: true
             },
@@ -125,6 +126,12 @@ export async function POST(request: NextRequest) {
 
         if (chunkError) {
           console.error(`❌ Error storing chunk ${i}:`, chunkError)
+          console.error(`❌ Chunk data:`, {
+            id: `${documentId}_chunk_${i}`,
+            title: metadata.title,
+            contentLength: chunk.content.length,
+            embeddingLength: embedding?.length
+          })
         } else {
           console.log(`✅ Successfully stored chunk ${i} with ID: ${insertData?.[0]?.id}`)
           totalChunksStored++
@@ -136,8 +143,9 @@ export async function POST(request: NextRequest) {
         }
 
       } catch (embeddingError) {
-        console.error(`❌ Error generating embedding for chunk ${i}:`, embeddingError)
+        console.error(`❌ Error processing chunk ${i}:`, embeddingError)
         console.error(`❌ Chunk content preview:`, chunk.content?.substring(0, 200))
+        // Continue with next chunk instead of stopping
       }
     }
 
