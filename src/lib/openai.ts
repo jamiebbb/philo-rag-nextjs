@@ -1,17 +1,26 @@
 import OpenAI from 'openai'
 
-const apiKey = process.env.OPENAI_API_KEY
+let openaiInstance: OpenAI | null = null
 
-if (!apiKey) {
-  throw new Error('Missing OpenAI API key. Please set OPENAI_API_KEY in your .env.local file.')
+function getOpenAIClient(): OpenAI {
+  if (!openaiInstance) {
+    const apiKey = process.env.OPENAI_API_KEY
+    
+    if (!apiKey) {
+      throw new Error('Missing OpenAI API key. Please set OPENAI_API_KEY in your .env.local file.')
+    }
+    
+    openaiInstance = new OpenAI({
+      apiKey: apiKey
+    })
+  }
+  
+  return openaiInstance
 }
-
-export const openai = new OpenAI({
-  apiKey: apiKey
-})
 
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
+    const openai = getOpenAIClient()
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
       input: text
@@ -29,6 +38,7 @@ export async function generateChatCompletion(
   model: string = 'gpt-4o-mini'
 ): Promise<string> {
   try {
+    const openai = getOpenAIClient()
     const response = await openai.chat.completions.create({
       model: model,
       messages: messages as any,
