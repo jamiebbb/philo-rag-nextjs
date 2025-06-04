@@ -26,9 +26,30 @@ export function DocumentUpload() {
   const [chunkSize, setChunkSize] = useState(1000)
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // File size limits (in bytes)
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file
+  const MAX_TOTAL_SIZE = 25 * 1024 * 1024 // 25MB total
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
+    
+    // Check individual file sizes
+    const oversizedFiles = pdfFiles.filter(file => file.size > MAX_FILE_SIZE)
+    if (oversizedFiles.length > 0) {
+      alert(`The following files are too large (max 10MB each):\n${oversizedFiles.map(f => f.name).join('\n')}`)
+      return
+    }
+
+    // Check total size
+    const totalSize = pdfFiles.reduce((sum, file) => sum + file.size, 0)
+    if (totalSize > MAX_TOTAL_SIZE) {
+      alert(`Total file size is too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 25MB total.`)
+      return
+    }
+
     setFiles(pdfFiles)
     
     // Auto-fill title from first file if empty
@@ -85,19 +106,15 @@ export function DocumentUpload() {
     }
   }
 
-  const previewChunks = async () => {
-    if (files.length === 0 || !metadata.title) return
+  const handlePreview = async () => {
+    if (!files || files.length === 0) {
+      alert('Please select PDF files first')
+      return
+    }
 
-    console.log('🔍 Starting chunk preview...')
-    console.log('📄 Files to process:', files.map(f => ({ name: f.name, size: f.size, type: f.type })))
-    console.log('📋 Metadata:', metadata)
-    console.log('⚙️ Settings:', { splitterType, chunkSize, chunkOverlap })
-
-    setUploadProgress({
-      stage: 'processing',
-      progress: 0,
-      message: 'Generating chunk preview...'
-    })
+    setIsLoading(true)
+    setError('')
+    setChunkStats(null)
 
     try {
       const formData = new FormData()
@@ -107,67 +124,40 @@ export function DocumentUpload() {
       formData.append('chunkSize', chunkSize.toString())
       formData.append('chunkOverlap', chunkOverlap.toString())
 
-      console.log('📡 Sending request to /api/preview-chunks...')
-
       const response = await fetch('/api/preview-chunks', {
         method: 'POST',
         body: formData
       })
 
-      console.log('📡 Response status:', response.status)
-      console.log('📡 Response ok:', response.ok)
-
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ Response error:', errorText)
-        throw new Error(`Failed to preview chunks: ${errorText}`)
+        const errorData = await response.json()
+        let errorMessage = errorData.error || 'Unknown error occurred'
+        
+        // Handle specific error types
+        if (response.status === 413) {
+          errorMessage = `File too large: ${errorMessage}\n\nTip: Try uploading smaller PDF files (under 10MB each) or split large documents into smaller parts.`
+        } else if (response.status === 500) {
+          errorMessage = `Server error: ${errorMessage}\n\nThis might be due to file size or complexity. Try a smaller file.`
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
-      console.log('📊 Preview chunks response:', data) // Debug log
-      
-      if (data.success && data.chunkStats) {
-        console.log('✅ Chunk stats received:', data.chunkStats)
-        setChunkStats(data.chunkStats)
-        setShowPreview(true)
-        setUploadProgress({
-          stage: 'complete',
-          progress: 100,
-          message: 'Preview generated successfully!'
-        })
-      } else {
-        console.error('❌ Invalid response structure:', data)
-        throw new Error('Invalid response from preview API')
-      }
+      setChunkStats(data.chunkStats)
+      console.log('✅ Preview successful:', data)
     } catch (error) {
       console.error('❌ Error previewing chunks:', error)
-      
-      // More detailed error message
-      let errorMessage = 'Failed to generate preview. Please try again.'
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Unable to connect to server. Please ensure the development server is running.'
-        } else if (error.message.includes('NetworkError')) {
-          errorMessage = 'Network error. Please check your connection and try again.'
-        } else {
-          errorMessage = `Error: ${error.message}`
-        }
-      }
-      
-      setUploadProgress({
-        stage: 'error',
-        progress: 0,
-        message: errorMessage
-      })
-      // Reset preview state on error
-      setShowPreview(false)
-      setChunkStats(null)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      setError(`Failed to preview chunks: ${errorMessage}`)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const uploadDocuments = async () => {
     if (!chunkStats) {
-      await previewChunks()
+      await handlePreview()
       return
     }
 
@@ -469,10 +459,10 @@ export function DocumentUpload() {
                     value={chunkSize}
                     onChange={(e) => setChunkSize(Number(e.target.value))}
                     min="100"
-                    max="4000"
+                    max="5000"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (100-4000)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (100-5000)</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -586,7 +576,7 @@ export function DocumentUpload() {
         </div>
       )}
 
-      {/* Progress */}
+      {/* Upload Progress */}
       {uploadProgress && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
@@ -599,7 +589,7 @@ export function DocumentUpload() {
             )}
             <span className="font-medium">{uploadProgress.message}</span>
           </div>
-          {uploadProgress.stage !== 'complete' && uploadProgress.stage !== 'error' && (
+          {uploadProgress.stage !== 'error' && (
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
@@ -610,24 +600,35 @@ export function DocumentUpload() {
         </div>
       )}
 
+      {/* Error Display */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="w-5 h-5 text-red-500" />
+            <span className="font-medium text-red-800">Error</span>
+          </div>
+          <p className="text-red-700 text-sm whitespace-pre-line">{error}</p>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex gap-3">
         <button
-          onClick={previewChunks}
-          disabled={files.length === 0 || !metadata.title || uploadProgress?.stage === 'processing'}
+          onClick={handlePreview}
+          disabled={files.length === 0 || !metadata.title || isLoading || uploadProgress?.stage === 'processing'}
           className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           <Eye className="w-4 h-4" />
-          Preview Chunks
+          {isLoading ? 'Generating Preview...' : 'Preview Chunks'}
         </button>
         
         <button
           onClick={uploadDocuments}
-          disabled={!chunkStats || uploadProgress?.stage === 'uploading'}
+          disabled={files.length === 0 || !metadata.title || isLoading || uploadProgress?.stage === 'uploading'}
           className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           <Upload className="w-4 h-4" />
-          Upload to Supabase
+          {chunkStats ? 'Upload Documents' : 'Preview & Upload'}
         </button>
 
         <button

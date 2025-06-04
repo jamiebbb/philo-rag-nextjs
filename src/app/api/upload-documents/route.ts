@@ -38,6 +38,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Metadata is required' }, { status: 400 })
     }
 
+    // File size validation
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file
+    const MAX_TOTAL_SIZE = 25 * 1024 * 1024 // 25MB total
+    
+    // Check individual file sizes
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        console.error(`❌ File too large for upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+        return NextResponse.json({ 
+          error: `File "${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 10MB per file.` 
+        }, { status: 413 })
+      }
+    }
+
+    // Check total payload size
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+    if (totalSize > MAX_TOTAL_SIZE) {
+      console.error(`❌ Total payload too large for upload: ${(totalSize / 1024 / 1024).toFixed(1)}MB`)
+      return NextResponse.json({ 
+        error: `Total file size is too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 25MB total.` 
+      }, { status: 413 })
+    }
+
+    // Validate chunk size
+    if (chunkSize < 100 || chunkSize > 5000) {
+      return NextResponse.json({ 
+        error: 'Chunk size must be between 100 and 5000 characters' 
+      }, { status: 400 })
+    }
+
     const metadata = JSON.parse(metadataStr)
     let totalChunks = 0
     let documentsCount = 0
