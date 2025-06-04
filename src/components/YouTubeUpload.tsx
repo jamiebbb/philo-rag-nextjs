@@ -105,7 +105,7 @@ export function YouTubeUpload() {
       if (response.ok) {
         setResult({
           success: true,
-          message: `Successfully processed YouTube video!`,
+          message: `Successfully processed and uploaded to Supabase vector database!`,
           metadata: data.metadata,
           transcriptLength: data.transcriptLength,
           chunksAdded: data.chunksAdded,
@@ -221,12 +221,16 @@ export function YouTubeUpload() {
           <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
             <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              AI Processing Workflow
+              AI Processing & Auto-Upload Workflow
             </h4>
             <div className="text-sm text-blue-800 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                 Downloads transcript using SUPADATA API
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                Corrects grammar and structures transcript with GPT-4o-mini
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
@@ -237,9 +241,12 @@ export function YouTubeUpload() {
                 Generates optimized chunks for semantic search
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                Stores embeddings in vector database for RAG chat
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <strong>Automatically uploads to Supabase vector database</strong>
               </div>
+            </div>
+            <div className="mt-2 p-2 bg-green-100 rounded text-xs text-green-800">
+              ✨ <strong>One-click processing:</strong> Video is automatically processed and uploaded to your vector database for RAG chat!
             </div>
           </div>
 
@@ -296,12 +303,12 @@ export function YouTubeUpload() {
           <div className="flex items-center gap-3">
             <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
             <div>
-              <p className="font-medium text-blue-900">Processing YouTube Video...</p>
-              <p className="text-sm text-blue-700">{processingStep}</p>
+              <p className="font-medium text-blue-900">Processing & Uploading to Supabase...</p>
+              <p className="text-sm text-blue-700">{processingStep || 'Extracting transcript and generating embeddings...'}</p>
             </div>
           </div>
           <div className="mt-3 text-xs text-blue-600">
-            This may take 30-60 seconds depending on video length...
+            This may take 30-60 seconds depending on video length. The video will be automatically uploaded to your vector database.
           </div>
         </div>
       )}
@@ -328,6 +335,16 @@ export function YouTubeUpload() {
               
               {result.success && result.metadata && (
                 <div className="mt-3 space-y-2">
+                  <div className="p-3 bg-green-100 rounded border border-green-300 mb-3">
+                    <p className="font-medium text-green-800 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      ✅ Successfully uploaded to Supabase vector database
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Video content is now available for RAG chat queries. You can find it in your Documents Manager.
+                    </p>
+                  </div>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div className="bg-white p-3 rounded border">
                       <p className="font-medium text-gray-700">📊 Processing Stats</p>
@@ -388,12 +405,12 @@ export function YouTubeUpload() {
           {isProcessing ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              Processing...
+              Processing & Uploading...
             </>
           ) : (
             <>
               <Upload className="w-4 h-4" />
-              Process Video
+              🚀 Process & Upload to Supabase
             </>
           )}
         </button>

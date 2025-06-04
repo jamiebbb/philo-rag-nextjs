@@ -174,13 +174,13 @@ export function ChatInterface() {
               </div>
 
               <div className="flex-1">
-                <div
-                  className={`rounded-lg p-3 ${
-                    message.role === 'user'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
-                >
+              <div
+                className={`rounded-lg p-3 ${
+                  message.role === 'user'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 text-gray-800'
+                }`}
+              >
                   <div className="whitespace-pre-wrap">
                     <ReactMarkdown
                       components={{
@@ -197,41 +197,41 @@ export function ChatInterface() {
                       {message.content}
                     </ReactMarkdown>
                   </div>
-                  <p
-                    className={`text-xs mt-2 ${
-                      message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
-                    }`}
-                  >
-                    {formatDate(message.timestamp)}
-                  </p>
+                <p
+                  className={`text-xs mt-2 ${
+                    message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                  }`}
+                >
+                  {formatDate(message.timestamp)}
+                </p>
 
-                  {/* Sources */}
-                  {message.sources && message.sources.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-300">
-                      <p className="text-xs font-medium text-gray-600 mb-2">
-                        Sources:
-                      </p>
-                      <div className="space-y-2">
-                        {message.sources.map((source, index) => (
-                          <div
-                            key={index}
-                            className="bg-white rounded p-2 text-xs text-gray-700"
-                          >
-                            <div className="flex items-center gap-1 font-medium">
-                              <FileText className="w-3 h-3" />
-                              {source.title}
-                              {source.author && (
-                                <span className="text-gray-500">
-                                  by {source.author}
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-1 text-gray-600 line-clamp-2">
-                              {source.content.substring(0, 100)}...
-                            </p>
+                {/* Sources */}
+                {message.sources && message.sources.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-300">
+                    <p className="text-xs font-medium text-gray-600 mb-2">
+                      Sources:
+                    </p>
+                    <div className="space-y-2">
+                      {message.sources.map((source, index) => (
+                        <div
+                          key={index}
+                          className="bg-white rounded p-2 text-xs text-gray-700"
+                        >
+                          <div className="flex items-center gap-1 font-medium">
+                            <FileText className="w-3 h-3" />
+                            {source.title}
+                            {source.author && (
+                              <span className="text-gray-500">
+                                by {source.author}
+                              </span>
+                            )}
                           </div>
-                        ))}
-                      </div>
+                          <p className="mt-1 text-gray-600 line-clamp-2">
+                            {source.content.substring(0, 100)}...
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                     </div>
                   )}
                 </div>

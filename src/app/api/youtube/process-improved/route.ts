@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Step 11: Generate embeddings and add to vector store
-    console.log('🔮 Generating embeddings and storing in vector database...')
+    console.log('🔮 Generating embeddings and storing in Supabase vector database...')
     const docIds: string[] = []
     
     for (const doc of documents) {
@@ -201,7 +201,12 @@ export async function POST(request: NextRequest) {
       chunksAdded: docIds.length,
       trackerId,
       metadata: generatedMetadata,
-      transcriptLength: correctedTranscript.length
+      transcriptLength: correctedTranscript.length,
+      supabaseUpload: {
+        documentsStored: docIds.length,
+        vectorDatabase: 'documents_enhanced',
+        status: 'completed'
+      }
     })
 
   } catch (error) {
