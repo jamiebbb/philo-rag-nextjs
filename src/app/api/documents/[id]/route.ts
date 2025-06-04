@@ -3,11 +3,11 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = createServerSupabaseClient()
-    const documentId = params.id
+    const { id: documentId } = await params
 
     // Delete the document
     const { error } = await supabase
@@ -30,11 +30,11 @@ export async function DELETE(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = createServerSupabaseClient()
-    const documentId = params.id
+    const { id: documentId } = await params
 
     const { data: document, error } = await supabase
       .from('documents_enhanced')
