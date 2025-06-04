@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { YouTubeVideoInfo, YouTubeMetadata } from '@/types'
+import { generateChatCompletion } from '@/lib/openai'
 
 const SUPADATA_API_URL = "https://api.supadata.ai"
 const SUPADATA_TRANSCRIPT_ENDPOINT = "/v1/youtube/transcript"
@@ -115,10 +116,13 @@ export async function getYouTubeTranscript(videoId: string): Promise<string | nu
 }
 
 /**
- * Clean and format transcript using OpenAI
+ * Clean and format transcript using GPT-4o-mini with the exact Streamlit prompt
  */
 export async function cleanYouTubeTranscript(transcript: string): Promise<string> {
   try {
+    console.log('🧹 Starting transcript cleaning with GPT-4o-mini...')
+    console.log('📊 Original transcript length:', transcript.length)
+    
     const systemPrompt = `You are an expert in grammar corrections and textual structuring.
 
 Correct the classification of the provided text, adding commas, periods, question marks and other symbols necessary for natural and consistent reading. Do not change any words, just adjust the punctuation according to the grammatical rules and context.
@@ -127,30 +131,55 @@ Organize your content using markdown, structuring it with titles, subtitles, lis
 
 Textual organization should always be a priority according to the content of the text, as well as the appropriate title, which must make sense.`
 
-    // Limit transcript length
-    const maxContentLength = 12000
-    const limitedTranscript = transcript.length > maxContentLength 
-      ? transcript.substring(0, maxContentLength) + "\n\n[Transcript truncated due to length]"
-      : transcript
-
-    const response = await fetch('/api/clean-transcript', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemPrompt,
-        transcript: limitedTranscript
-      })
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      return data.cleanedTranscript
-    }
+    // Limit transcript length to fit GPT-4o-mini token limits
+    const MAX_CHUNK_SIZE = 12000 // Characters, safe for GPT-4o-mini
     
-    return transcript
+    if (transcript.length <= MAX_CHUNK_SIZE) {
+      // Process entire transcript at once
+      console.log('🧹 Processing transcript in single chunk...')
+      
+      const response = await generateChatCompletion([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Here is a YouTube transcript that needs cleaning and formatting:\n\n${transcript}` }
+      ], 'gpt-4o-mini')
+
+      console.log('✅ Transcript cleaned successfully')
+      console.log('📊 Cleaned transcript length:', response.length)
+      return response
+
+    } else {
+      // Split into chunks and process each
+      console.log(`🧹 Transcript too long (${transcript.length} chars), splitting into chunks...`)
+      
+      const chunks = []
+      for (let i = 0; i < transcript.length; i += MAX_CHUNK_SIZE) {
+        chunks.push(transcript.slice(i, i + MAX_CHUNK_SIZE))
+      }
+      
+      console.log(`🧹 Processing ${chunks.length} chunks...`)
+      
+      const cleanedChunks = []
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`🧹 Cleaning chunk ${i + 1}/${chunks.length}...`)
+        
+        const response = await generateChatCompletion([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Here is a YouTube transcript chunk that needs cleaning and formatting:\n\n${chunks[i]}` }
+        ], 'gpt-4o-mini')
+        
+        cleanedChunks.push(response)
+      }
+      
+      const finalCleaned = cleanedChunks.join('\n\n')
+      console.log('✅ All chunks cleaned and combined')
+      console.log('📊 Final cleaned transcript length:', finalCleaned.length)
+      return finalCleaned
+    }
+
   } catch (error) {
-    console.error('Error cleaning transcript:', error)
-    return transcript
+    console.error('❌ Error cleaning transcript with GPT-4o-mini:', error)
+    console.log('⚠️ Returning original transcript due to error')
+    return transcript // Return original if cleaning fails
   }
 }
 
