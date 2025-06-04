@@ -23,30 +23,21 @@ export function DocumentUpload() {
   const [showPreview, setShowPreview] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [splitterType, setSplitterType] = useState<'recursive' | 'character' | 'markdown' | 'html'>('recursive')
-  const [chunkSize, setChunkSize] = useState(1000)
-  const [chunkOverlap, setChunkOverlap] = useState(200)
+  const [chunkSize, setChunkSize] = useState(5000)
+  const [chunkOverlap, setChunkOverlap] = useState(500)
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // File size limits (in bytes) - Vercel has 4.5MB request body limit
-  const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB per file
-  const MAX_TOTAL_SIZE = 3 * 1024 * 1024 // 3MB total
+  // No file size limits for server-side processing
+  // Server can handle larger files efficiently
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
     
-    // Check individual file sizes
-    const oversizedFiles = pdfFiles.filter(file => file.size > MAX_FILE_SIZE)
-    if (oversizedFiles.length > 0) {
-      alert(`The following files are too large (max 2MB each):\n${oversizedFiles.map(f => f.name).join('\n')}`)
-      return
-    }
-
-    // Check total size
-    const totalSize = pdfFiles.reduce((sum, file) => sum + file.size, 0)
-    if (totalSize > MAX_TOTAL_SIZE) {
-      alert(`Total file size is too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 3MB total.`)
+    // Just validate that files are PDFs, no size restrictions
+    if (pdfFiles.length === 0) {
+      alert('Please select PDF files only.')
       return
     }
 
@@ -57,7 +48,7 @@ export function DocumentUpload() {
       const fileName = pdfFiles[0].name.replace('.pdf', '')
       setMetadata(prev => ({ ...prev, title: fileName }))
     }
-  }, [metadata.title, MAX_FILE_SIZE, MAX_TOTAL_SIZE])
+  }, [metadata.title])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -259,10 +250,10 @@ export function DocumentUpload() {
                 Drag & drop PDF files here, or click to select
               </p>
               <p className="text-sm text-gray-500">
-                Supports multiple PDF files (max 2MB each, 3MB total)
+                Supports multiple PDF files of any size
               </p>
               <p className="text-xs text-blue-600 mt-1">
-                ⚡ Optimized for Vercel&apos;s serverless function limits
+                ⚡ Server-side processing handles large files efficiently
               </p>
             </div>
           )}

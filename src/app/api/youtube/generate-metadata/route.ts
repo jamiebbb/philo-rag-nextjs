@@ -119,7 +119,7 @@ async function generateMetadataFromTranscript(
 Follow these instructions carefully:
 1. Create a concise summary using clear, concise language with active voice
 2. Identify the genre/topic and content type
-3. Identify the ACTUAL AUTHOR of the content (not the YouTube channel) from the title and content
+3. Extract the ACTUAL AUTHOR/SPEAKER NAME from the video title (look for names in the title like "Jordan Peterson", "Sam Harris", etc.) - if no clear author name is in the title, use the YouTube channel name
 4. Assign a difficulty rating (Beginner, Intermediate, Advanced, Expert) based on complexity and target audience
 5. Generate relevant tags that would be useful in a chatbot context
 
@@ -128,11 +128,19 @@ Summary: [Your summary here]
 Genre: [Genre]
 Topic: [Topic]
 Type: [Content type - should be "Video"]
-Author: [The actual author/speaker of the content, not the YouTube channel]
+Author: [Extract author name from title if possible, otherwise use "${channel}"]
 Tags: [tag1, tag2, tag3, etc.]
 Difficulty: [Beginner/Intermediate/Advanced/Expert]`
 
-    const userPrompt = `Generate metadata for YouTube video titled '${title}' with this transcript sample: ${transcript.substring(0, 1500)}...`
+    const userPrompt = `Generate metadata for YouTube video:
+TITLE: "${title}"
+CHANNEL: "${channel}"
+TRANSCRIPT: ${transcript}
+
+Instructions:
+- Use the FULL transcript provided for analysis (not just a sample)
+- Extract the actual speaker/author name from the title if clearly identifiable
+- Generate comprehensive metadata based on the complete content`
 
     const response = await generateChatCompletion([
       { role: 'system', content: systemMessage },
