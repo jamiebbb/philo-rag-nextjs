@@ -190,6 +190,13 @@ export default function DocumentUploadClient() {
       return
     }
 
+    console.log('🚀 Starting upload to vector store...')
+    console.log('📊 Upload data:', {
+      chunksCount: processedData.chunks.length,
+      metadata: metadata,
+      firstChunkSample: processedData.chunks[0]?.content?.substring(0, 200)
+    })
+
     setProgress({ 
       stage: 'uploading', 
       message: 'Uploading chunks to vector database...', 
@@ -197,45 +204,59 @@ export default function DocumentUploadClient() {
     })
 
     try {
+      const uploadPayload = {
+        chunks: processedData.chunks,
+        metadata,
+        processingInfo: {
+          processingTime: processedData.result.processingTime,
+          textLength: processedData.result.textLength,
+          totalFiles: files.length,
+          extractedText: processedData.result.extractedText
+        }
+      }
+      
+      console.log('📤 Sending upload request with payload:', {
+        chunksCount: uploadPayload.chunks.length,
+        metadataKeys: Object.keys(uploadPayload.metadata),
+        processingInfoKeys: Object.keys(uploadPayload.processingInfo),
+        payloadSize: JSON.stringify(uploadPayload).length
+      })
+
       const response = await fetch('/api/upload-processed-chunks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          chunks: processedData.chunks,
-          metadata,
-          processingInfo: {
-            processingTime: processedData.result.processingTime,
-            textLength: processedData.result.textLength,
-            totalFiles: files.length,
-            extractedText: processedData.result.extractedText
-          }
-        })
+        body: JSON.stringify(uploadPayload)
       })
+
+      console.log('📨 Upload response status:', response.status)
+      console.log('📨 Upload response ok:', response.ok)
 
       if (!response.ok) {
         const errorData = await response.json()
+        console.error('❌ Upload failed with error data:', errorData)
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
       const result = await response.json()
+      console.log('✅ Upload successful! Result:', result)
       
       setProgress({ 
         stage: 'complete', 
-        message: `Successfully uploaded ${result.chunksCount} chunks to vector database`, 
+        message: `✅ Successfully uploaded ${result.chunksCount || 0} chunks to vector database! Document ID: ${result.documentId}`, 
         progress: 100 
       })
 
-      // DON'T auto-reset - let user decide when to upload another document
-      console.log('✅ Upload completed:', result)
+      // DON'T auto-reset - let user see the results and decide
+      console.log('🎉 Upload completed successfully - keeping results visible')
 
     } catch (error) {
-      console.error('Upload error:', error)
-      setError(error instanceof Error ? error.message : 'Upload failed')
+      console.error('❌ Upload error:', error)
+      setError(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}. Check console for details.`)
       setProgress({ 
         stage: 'error', 
-        message: 'Upload failed', 
+        message: 'Upload failed - check console for details', 
         progress: 0 
       })
     }
@@ -318,6 +339,44 @@ Check console for detailed logs and chunk sample.`)
     } catch (error) {
       console.error('Chunk structure test error:', error)
       alert(`Chunk structure test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const testSupabaseUpload = async () => {
+    try {
+      console.log('🧪 Testing Supabase upload connectivity...')
+      const response = await fetch('/api/test-upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const result = await response.json()
+      console.log('🧪 Supabase test result:', result)
+      
+      if (result.success) {
+        alert(`✅ Supabase Upload Test PASSED!
+
+${result.message}
+
+Tests:
+${Object.entries(result.tests).map(([key, value]) => `${key}: ${value}`).join('\n')}
+
+The database connection is working. Upload issue must be elsewhere.`)
+      } else {
+        alert(`❌ Supabase Upload Test FAILED!
+
+Error: ${result.error}
+
+Details: ${JSON.stringify(result.details, null, 2)}
+
+Check console for full error details.`)
+      }
+      
+    } catch (error) {
+      console.error('Supabase test error:', error)
+      alert(`Supabase test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -589,22 +648,28 @@ Check console for detailed logs and chunk sample.`)
             {/* Chunk Preview */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <h4 className="font-semibold text-blue-800 mb-3">📄 Chunk Preview</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                {processedData.chunks.slice(0, 6).map((chunk: any, index: number) => (
-                  <div key={index} className="bg-white p-3 rounded border border-blue-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-blue-600">
-                        Chunk {index + 1}
+              <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto">
+                {processedData.chunks.slice(0, 4).map((chunk: any, index: number) => (
+                  <div key={index} className="bg-white p-4 rounded border border-blue-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-blue-600">
+                        Chunk {index + 1} of {processedData.chunks.length}
                       </span>
-                      <span className="text-xs text-gray-500">
-                        {chunk.content.length} chars
+                      <span className="text-sm text-gray-500">
+                        {chunk.content.length} characters
                       </span>
                     </div>
-                    <div className="text-xs text-gray-700 leading-relaxed">
-                      {chunk.content.length > 300 ? (
+                    <div className="text-sm text-gray-700 leading-relaxed border-l-4 border-blue-200 pl-3">
+                      {chunk.content.length > 800 ? (
                         <>
-                          {chunk.content.substring(0, 300)}
-                          <span className="text-blue-500 font-medium">... (truncated)</span>
+                          <div className="mb-2">
+                            <strong>Preview (first 400 chars):</strong>
+                            <div className="mt-1">{chunk.content.substring(0, 400)}...</div>
+                          </div>
+                          <div>
+                            <strong>End (last 400 chars):</strong>
+                            <div className="mt-1">...{chunk.content.substring(chunk.content.length - 400)}</div>
+                          </div>
                         </>
                       ) : (
                         chunk.content
@@ -613,9 +678,9 @@ Check console for detailed logs and chunk sample.`)
                   </div>
                 ))}
               </div>
-              {processedData.chunks.length > 6 && (
-                <p className="text-xs text-blue-600 mt-2 text-center">
-                  Showing 6 of {processedData.chunks.length} chunks
+              {processedData.chunks.length > 4 && (
+                <p className="text-sm text-blue-600 mt-3 text-center">
+                  Showing 4 of {processedData.chunks.length} chunks. Upload to see all chunks in Supabase.
                 </p>
               )}
             </div>
@@ -675,6 +740,17 @@ Check console for detailed logs and chunk sample.`)
                   >
                     <Eye className="w-4 h-4" />
                     {progress?.stage === 'uploading' ? 'Testing...' : 'Test Chunk Structure'}
+                  </button>
+                )}
+
+                {processedData && (
+                  <button
+                    onClick={testSupabaseUpload}
+                    disabled={progress?.stage === 'uploading'}
+                    className="px-6 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    {progress?.stage === 'uploading' ? 'Testing...' : 'Test Supabase Upload'}
                   </button>
                 )}
               </>
