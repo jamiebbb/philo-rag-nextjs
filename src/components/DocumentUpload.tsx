@@ -29,9 +29,9 @@ export function DocumentUpload() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // File size limits (in bytes)
-  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file
-  const MAX_TOTAL_SIZE = 25 * 1024 * 1024 // 25MB total
+  // File size limits (in bytes) - Vercel has 4.5MB request body limit
+  const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB per file
+  const MAX_TOTAL_SIZE = 3 * 1024 * 1024 // 3MB total
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
@@ -39,14 +39,14 @@ export function DocumentUpload() {
     // Check individual file sizes
     const oversizedFiles = pdfFiles.filter(file => file.size > MAX_FILE_SIZE)
     if (oversizedFiles.length > 0) {
-      alert(`The following files are too large (max 10MB each):\n${oversizedFiles.map(f => f.name).join('\n')}`)
+      alert(`The following files are too large (max 2MB each):\n${oversizedFiles.map(f => f.name).join('\n')}`)
       return
     }
 
     // Check total size
     const totalSize = pdfFiles.reduce((sum, file) => sum + file.size, 0)
     if (totalSize > MAX_TOTAL_SIZE) {
-      alert(`Total file size is too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 25MB total.`)
+      alert(`Total file size is too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 3MB total.`)
       return
     }
 
@@ -135,7 +135,7 @@ export function DocumentUpload() {
         
         // Handle specific error types
         if (response.status === 413) {
-          errorMessage = `File too large: ${errorMessage}\n\nTip: Try uploading smaller PDF files (under 10MB each) or split large documents into smaller parts.`
+          errorMessage = `File too large: ${errorMessage}\n\nTip: Try uploading smaller PDF files (under 2MB each) or split large documents into smaller parts.`
         } else if (response.status === 500) {
           errorMessage = `Server error: ${errorMessage}\n\nThis might be due to file size or complexity. Try a smaller file.`
         }
@@ -259,7 +259,10 @@ export function DocumentUpload() {
                 Drag & drop PDF files here, or click to select
               </p>
               <p className="text-sm text-gray-500">
-                Supports multiple PDF files
+                Supports multiple PDF files (max 2MB each, 3MB total)
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                ⚡ Optimized for Vercel's serverless function limits
               </p>
             </div>
           )}

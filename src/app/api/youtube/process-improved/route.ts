@@ -76,29 +76,34 @@ export async function POST(request: NextRequest) {
     const cleanedTranscript = await cleanYouTubeTranscript(rawTranscript)
     console.log('🧹 Cleaned transcript length:', cleanedTranscript.length)
 
-    // Step 6: Generate comprehensive metadata from transcript and title
-    console.log('🤖 Generating metadata from transcript...')
+    // Step 6: Correct grammar and structure transcript with GPT-4o-mini
+    console.log('📝 Correcting grammar and structuring transcript with GPT-4o-mini...')
+    const correctedTranscript = await correctTranscriptGrammar(cleanedTranscript)
+    console.log('📝 Corrected transcript length:', correctedTranscript.length)
+
+    // Step 7: Generate comprehensive metadata from corrected transcript and title
+    console.log('🤖 Generating metadata from corrected transcript...')
     const generatedMetadata = await generateMetadataFromTranscript(
       videoMetadata.title || `YouTube Video ${videoId}`, 
-      cleanedTranscript,
+      correctedTranscript,
       videoMetadata.youtube_channel || 'Unknown Channel'
     )
 
     console.log('🤖 Generated metadata:', generatedMetadata)
 
-    // Step 7: Create text splitter
+    // Step 8: Create text splitter
     const textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize,
       chunkOverlap,
       lengthFunction: (text: string) => text.length,
     })
 
-    // Step 8: Split transcript into chunks
-    console.log('✂️ Splitting transcript into chunks...')
-    const chunks = await textSplitter.splitText(cleanedTranscript)
+    // Step 9: Split corrected transcript into chunks
+    console.log('✂️ Splitting corrected transcript into chunks...')
+    const chunks = await textSplitter.splitText(correctedTranscript)
     console.log('✂️ Created', chunks.length, 'chunks')
 
-    // Step 9: Create Document objects with enhanced metadata
+    // Step 10: Create Document objects with enhanced metadata
     const documents = chunks.map((chunk, index) => {
       const chunkMetadata = {
         ...generatedMetadata,
@@ -117,7 +122,7 @@ export async function POST(request: NextRequest) {
       })
     })
 
-    // Step 10: Generate embeddings and add to vector store
+    // Step 11: Generate embeddings and add to vector store
     console.log('🔮 Generating embeddings and storing in vector database...')
     const docIds: string[] = []
     
@@ -168,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Successfully stored', docIds.length, 'chunks')
 
-    // Step 11: Add to document tracker
+    // Step 12: Add to document tracker
     const trackerId = await addDocumentRecord({
       title: generatedMetadata.title,
       author: generatedMetadata.author,
@@ -196,7 +201,7 @@ export async function POST(request: NextRequest) {
       chunksAdded: docIds.length,
       trackerId,
       metadata: generatedMetadata,
-      transcriptLength: cleanedTranscript.length
+      transcriptLength: correctedTranscript.length
     })
 
   } catch (error) {
@@ -325,4 +330,68 @@ Generate comprehensive metadata for this video.`
       difficulty: 'Intermediate'
     }
   }
+}
+
+/**
+ * Correct transcript grammar and structure using GPT-4o-mini
+ */
+async function correctTranscriptGrammar(transcript: string): Promise<string> {
+  try {
+    console.log('📝 Starting grammar correction with GPT-4o-mini...')
+    
+    // If transcript is very long, process in chunks
+    const MAX_CHUNK_SIZE = 8000 // Safe size for GPT-4o-mini input
+    
+    if (transcript.length <= MAX_CHUNK_SIZE) {
+      // Process the entire transcript at once
+      return await correctTranscriptChunk(transcript)
+    } else {
+      // Split into chunks and process each
+      const chunks = []
+      for (let i = 0; i < transcript.length; i += MAX_CHUNK_SIZE) {
+        chunks.push(transcript.slice(i, i + MAX_CHUNK_SIZE))
+      }
+      
+      console.log(`📝 Processing ${chunks.length} chunks for grammar correction...`)
+      
+      const correctedChunks = []
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`📝 Correcting chunk ${i + 1}/${chunks.length}...`)
+        const correctedChunk = await correctTranscriptChunk(chunks[i])
+        correctedChunks.push(correctedChunk)
+      }
+      
+      return correctedChunks.join('\n\n')
+    }
+
+  } catch (error) {
+    console.error('❌ Error correcting transcript grammar:', error)
+    // Return original transcript if correction fails
+    return transcript
+  }
+}
+
+/**
+ * Correct a single chunk of transcript
+ */
+async function correctTranscriptChunk(transcriptChunk: string): Promise<string> {
+  const systemPrompt = `You are an expert in grammar corrections and textual structuring.
+
+Correct the classification of the provided text, adding commas, periods, question marks and other symbols necessary for natural and consistent reading. Do not change any words, just adjust the punctuation according to the grammatical rules and context.
+
+Organize your content using markdown, structuring it with titles, subtitles, lists or other protected elements to clearly highlight the topics and information captured. Leave it in English and remember to always maintain the original formatting.
+
+Textual organization should always be a priority according to the content of the text, as well as the appropriate title, which must make sense.`
+
+  const userPrompt = `Please correct the grammar and structure the following transcript:
+
+${transcriptChunk}`
+
+  // Use the existing generateChatCompletion function with GPT-4o-mini
+  const correctedText = await generateChatCompletion([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
+  ], 'gpt-4o-mini', 4000) // Increased max_tokens for longer responses
+
+  return correctedText || transcriptChunk
 } 

@@ -35,7 +35,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 export async function generateChatCompletion(
   messages: Array<{ role: string; content: string }>,
-  model: string = 'gpt-4o-mini'
+  model: string = 'gpt-4o-mini',
+  maxTokens: number = 2000
 ): Promise<string> {
   try {
     const openai = getOpenAIClient()
@@ -43,7 +44,7 @@ export async function generateChatCompletion(
       model: model,
       messages: messages as any,
       temperature: 0.1,
-      max_tokens: 2000
+      max_tokens: maxTokens
     })
     
     return response.choices[0]?.message?.content || ''
