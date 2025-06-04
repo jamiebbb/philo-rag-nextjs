@@ -57,7 +57,7 @@ export function DocumentUpload() {
       const fileName = pdfFiles[0].name.replace('.pdf', '')
       setMetadata(prev => ({ ...prev, title: fileName }))
     }
-  }, [metadata.title])
+  }, [metadata.title, MAX_FILE_SIZE, MAX_TOTAL_SIZE])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -262,7 +262,7 @@ export function DocumentUpload() {
                 Supports multiple PDF files (max 2MB each, 3MB total)
               </p>
               <p className="text-xs text-blue-600 mt-1">
-                ⚡ Optimized for Vercel's serverless function limits
+                ⚡ Optimized for Vercel&apos;s serverless function limits
               </p>
             </div>
           )}
