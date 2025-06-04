@@ -88,6 +88,11 @@ export function DocumentUpload() {
   const previewChunks = async () => {
     if (files.length === 0 || !metadata.title) return
 
+    console.log('🔍 Starting chunk preview...')
+    console.log('📄 Files to process:', files.map(f => ({ name: f.name, size: f.size, type: f.type })))
+    console.log('📋 Metadata:', metadata)
+    console.log('⚙️ Settings:', { splitterType, chunkSize, chunkOverlap })
+
     setUploadProgress({
       stage: 'processing',
       progress: 0,
@@ -102,20 +107,27 @@ export function DocumentUpload() {
       formData.append('chunkSize', chunkSize.toString())
       formData.append('chunkOverlap', chunkOverlap.toString())
 
+      console.log('📡 Sending request to /api/preview-chunks...')
+
       const response = await fetch('/api/preview-chunks', {
         method: 'POST',
         body: formData
       })
 
+      console.log('📡 Response status:', response.status)
+      console.log('📡 Response ok:', response.ok)
+
       if (!response.ok) {
         const errorText = await response.text()
+        console.error('❌ Response error:', errorText)
         throw new Error(`Failed to preview chunks: ${errorText}`)
       }
 
       const data = await response.json()
-      console.log('Preview chunks response:', data) // Debug log
+      console.log('📊 Preview chunks response:', data) // Debug log
       
       if (data.success && data.chunkStats) {
+        console.log('✅ Chunk stats received:', data.chunkStats)
         setChunkStats(data.chunkStats)
         setShowPreview(true)
         setUploadProgress({
@@ -124,14 +136,28 @@ export function DocumentUpload() {
           message: 'Preview generated successfully!'
         })
       } else {
+        console.error('❌ Invalid response structure:', data)
         throw new Error('Invalid response from preview API')
       }
     } catch (error) {
-      console.error('Error previewing chunks:', error)
+      console.error('❌ Error previewing chunks:', error)
+      
+      // More detailed error message
+      let errorMessage = 'Failed to generate preview. Please try again.'
+      if (error instanceof Error) {
+        if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Unable to connect to server. Please ensure the development server is running.'
+        } else if (error.message.includes('NetworkError')) {
+          errorMessage = 'Network error. Please check your connection and try again.'
+        } else {
+          errorMessage = `Error: ${error.message}`
+        }
+      }
+      
       setUploadProgress({
         stage: 'error',
         progress: 0,
-        message: 'Failed to generate preview. Please try again.'
+        message: errorMessage
       })
       // Reset preview state on error
       setShowPreview(false)

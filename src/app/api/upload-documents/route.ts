@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openai'
-import pdf from 'pdf-parse'
 import { RecursiveCharacterTextSplitter, CharacterTextSplitter } from 'langchain/text_splitter'
+import { parsePDF, ParserType } from '@/lib/pdf-parsers'
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('📤 Upload documents API called')
+    
     // Get server-side Supabase client
     const supabase = createServerSupabaseClient()
     
@@ -13,12 +15,26 @@ export async function POST(request: NextRequest) {
     const files = formData.getAll('files') as File[]
     const metadataStr = formData.get('metadata') as string
     const splitterType = formData.get('splitterType') as string || 'recursive'
+    const chunkSize = parseInt(formData.get('chunkSize') as string) || 1000
+    const chunkOverlap = parseInt(formData.get('chunkOverlap') as string) || 200
+    const pdfParser = formData.get('pdfParser') as ParserType || 'pdf-parse'
+
+    console.log('📊 Upload data:', {
+      filesCount: files.length,
+      metadataLength: metadataStr?.length,
+      splitterType,
+      chunkSize,
+      chunkOverlap,
+      pdfParser
+    })
 
     if (!files || files.length === 0) {
+      console.error('❌ No files provided for upload')
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
 
     if (!metadataStr) {
+      console.error('❌ No metadata provided for upload')
       return NextResponse.json({ error: 'Metadata is required' }, { status: 400 })
     }
 
@@ -26,35 +42,69 @@ export async function POST(request: NextRequest) {
     let totalChunks = 0
     let documentsCount = 0
 
-    // Initialize text splitter
-    const textSplitter = splitterType === 'character' 
-      ? new CharacterTextSplitter({
-          chunkSize: 1000,
-          chunkOverlap: 200,
+    // Initialize text splitter based on type
+    let textSplitter
+    
+    switch (splitterType) {
+      case 'character':
+        textSplitter = new CharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
         })
-      : new RecursiveCharacterTextSplitter({
-          chunkSize: 1000,
-          chunkOverlap: 200,
+        break
+      case 'markdown':
+        textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
+          separators: ['\n## ', '\n### ', '\n#### ', '\n\n', '\n', ' ', '']
         })
+        break
+      case 'html':
+        textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
+          separators: ['</div>', '</p>', '</h1>', '</h2>', '</h3>', '\n\n', '\n', ' ', '']
+        })
+        break
+      default: // recursive
+        textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
+        })
+    }
+
+    console.log('🔧 Text splitter initialized for upload:', splitterType)
 
     for (const file of files) {
       try {
-        // Extract text from PDF
+        console.log(`📄 Processing file for upload: ${file.name}`)
+        
+        // Convert file to buffer
         const arrayBuffer = await file.arrayBuffer()
         const buffer = Buffer.from(arrayBuffer)
-        const pdfData = await pdf(buffer)
-        const text = pdfData.text
+
+        // Parse PDF using modular parser system
+        console.log(`🔍 Parsing PDF for upload with ${pdfParser}...`)
+        const pdfResult = await parsePDF(buffer, {
+          parser: pdfParser,
+          fallbackToMock: process.env.NODE_ENV === 'development'
+        })
+
+        const text = pdfResult.text
+        console.log(`📝 Extracted ${text.length} characters for upload from ${file.name}`)
 
         if (!text || text.trim().length === 0) {
-          console.warn(`No text extracted from ${file.name}`)
+          console.warn(`⚠️ No text extracted from ${file.name} for upload`)
           continue
         }
 
         // Split text into chunks
+        console.log('✂️ Splitting text for upload...')
         const chunks = await textSplitter.splitText(text)
+        console.log(`✅ Created ${chunks.length} chunks for upload from ${file.name}`)
 
         if (chunks.length === 0) {
-          console.warn(`No chunks created from ${file.name}`)
+          console.warn(`⚠️ No chunks created from ${file.name}`)
           continue
         }
 
@@ -62,6 +112,7 @@ export async function POST(request: NextRequest) {
         const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2)}`
 
         // Store document metadata
+        console.log(`💾 Storing document metadata for ${file.name}...`)
         const { error: docError } = await supabase
           .from('documents_enhanced')
           .insert({
@@ -75,16 +126,20 @@ export async function POST(request: NextRequest) {
               ...metadata,
               filename: file.name,
               file_size: file.size,
-              chunk_count: chunks.length
+              chunk_count: chunks.length,
+              parser_used: pdfResult.parserUsed,
+              parse_time: pdfResult.parseTime,
+              pdf_metadata: pdfResult.metadata
             }
           })
 
         if (docError) {
-          console.error('Error storing document:', docError)
+          console.error('❌ Error storing document:', docError)
           continue
         }
 
         // Process and store chunks with embeddings
+        console.log(`🔮 Generating embeddings for ${chunks.length} chunks...`)
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i]
           
@@ -106,26 +161,31 @@ export async function POST(request: NextRequest) {
                   ...metadata,
                   chunk_index: i,
                   parent_document: documentId,
-                  filename: file.name
+                  filename: file.name,
+                  parser_used: pdfResult.parserUsed
                 },
                 embedding: embedding
               })
 
             if (chunkError) {
-              console.error('Error storing chunk:', chunkError)
+              console.error('❌ Error storing chunk:', chunkError)
             } else {
               totalChunks++
             }
           } catch (embeddingError) {
-            console.error('Error generating embedding for chunk:', embeddingError)
+            console.error('❌ Error generating embedding for chunk:', embeddingError)
           }
         }
 
         documentsCount++
+        console.log(`✅ Successfully processed ${file.name}`)
+        
       } catch (fileError) {
-        console.error(`Error processing file ${file.name}:`, fileError)
+        console.error(`❌ Error processing file ${file.name}:`, fileError)
       }
     }
+
+    console.log(`🎉 Upload completed: ${documentsCount} documents, ${totalChunks} chunks`)
 
     return NextResponse.json({
       success: true,
@@ -135,7 +195,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error in upload API:', error)
+    console.error('❌ Error in upload API:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
