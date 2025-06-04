@@ -24,10 +24,15 @@ export function YouTubeUpload() {
   const [chunkSize, setChunkSize] = useState(400)
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
+  const [metadataError, setMetadataError] = useState<string | null>(null)
 
   const handleGenerateMetadata = async () => {
     if (!url.trim()) return
 
+    setIsGeneratingMetadata(true)
+    setMetadataError(null)
+    
     try {
       const response = await fetch('/api/generate-youtube-metadata', {
         method: 'POST',
@@ -35,19 +40,23 @@ export function YouTubeUpload() {
         body: JSON.stringify({ url: url.trim() })
       })
 
+      const data = await response.json()
+
       if (response.ok) {
-        const data = await response.json()
         setMetadata(prev => ({
           ...prev,
           ...data.metadata,
           source_url: url.trim()
         }))
+        setMetadataError(null)
       } else {
-        alert('Failed to generate metadata. Please enter manually.')
+        setMetadataError(data.error || 'Failed to generate metadata. Please enter manually.')
       }
     } catch (error) {
       console.error('Error generating metadata:', error)
-      alert('Failed to generate metadata. Please enter manually.')
+      setMetadataError('Network error. Please check your connection and try again.')
+    } finally {
+      setIsGeneratingMetadata(false)
     }
   }
 
@@ -126,7 +135,10 @@ export function YouTubeUpload() {
             <input
               type="url"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                setUrl(e.target.value)
+                setMetadataError(null)
+              }}
               placeholder="https://www.youtube.com/watch?v=..."
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
@@ -134,11 +146,27 @@ export function YouTubeUpload() {
             <button
               type="button"
               onClick={handleGenerateMetadata}
-              className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors"
+              disabled={!url.trim() || isGeneratingMetadata}
+              className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              Auto-fill Metadata
+              {isGeneratingMetadata ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  🧠 Auto-fill Metadata
+                </>
+              )}
             </button>
           </div>
+          {/* Error Message */}
+          {metadataError && (
+            <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-700">{metadataError}</p>
+            </div>
+          )}
         </div>
 
         {/* Metadata Fields */}
