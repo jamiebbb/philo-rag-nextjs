@@ -18,7 +18,10 @@ export function DocumentUpload() {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
   const [chunkStats, setChunkStats] = useState<ChunkStats | null>(null)
   const [showPreview, setShowPreview] = useState(false)
-  const [splitterType, setSplitterType] = useState<'recursive' | 'character'>('recursive')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [splitterType, setSplitterType] = useState<'recursive' | 'character' | 'markdown' | 'html'>('recursive')
+  const [chunkSize, setChunkSize] = useState(1000)
+  const [chunkOverlap, setChunkOverlap] = useState(200)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
@@ -61,6 +64,8 @@ export function DocumentUpload() {
       files.forEach(file => formData.append('files', file))
       formData.append('metadata', JSON.stringify(metadata))
       formData.append('splitterType', splitterType)
+      formData.append('chunkSize', chunkSize.toString())
+      formData.append('chunkOverlap', chunkOverlap.toString())
 
       const response = await fetch('/api/preview-chunks', {
         method: 'POST',
@@ -106,6 +111,8 @@ export function DocumentUpload() {
       files.forEach(file => formData.append('files', file))
       formData.append('metadata', JSON.stringify(metadata))
       formData.append('splitterType', splitterType)
+      formData.append('chunkSize', chunkSize.toString())
+      formData.append('chunkOverlap', chunkOverlap.toString())
 
       const response = await fetch('/api/upload-documents', {
         method: 'POST',
@@ -293,13 +300,60 @@ export function DocumentUpload() {
               </label>
               <select
                 value={splitterType}
-                onChange={(e) => setSplitterType(e.target.value as 'recursive' | 'character')}
+                onChange={(e) => setSplitterType(e.target.value as 'recursive' | 'character' | 'markdown' | 'html')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="recursive">Recursive Character (Recommended)</option>
                 <option value="character">Character</option>
+                <option value="markdown">Markdown</option>
+                <option value="html">HTML</option>
               </select>
             </div>
+          </div>
+
+          {/* Advanced Settings */}
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800"
+            >
+              <span>⚙️</span>
+              Advanced Chunking Settings
+            </button>
+
+            {showAdvanced && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Chunk Size
+                  </label>
+                  <input
+                    type="number"
+                    value={chunkSize}
+                    onChange={(e) => setChunkSize(Number(e.target.value))}
+                    min="100"
+                    max="4000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (100-4000)</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Chunk Overlap
+                  </label>
+                  <input
+                    type="number"
+                    value={chunkOverlap}
+                    onChange={(e) => setChunkOverlap(Number(e.target.value))}
+                    min="0"
+                    max="1000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Characters overlap between chunks (0-1000)</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

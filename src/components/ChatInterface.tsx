@@ -6,6 +6,7 @@ import { ChatMessage, DocumentSource } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { storeFeedback, storeDetailedFeedback } from '@/lib/feedback'
 import { v4 as uuidv4 } from 'uuid'
+import ReactMarkdown from 'react-markdown'
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -180,7 +181,22 @@ export function ChatInterface() {
                       : 'bg-gray-100 text-gray-800'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <div className="whitespace-pre-wrap">
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        strong: ({ children }) => (
+                          <strong className={`font-bold ${
+                            message.role === 'user' ? 'text-white' : 'text-gray-900'
+                          }`}>
+                            {children}
+                          </strong>
+                        ),
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
                   <p
                     className={`text-xs mt-2 ${
                       message.role === 'user' ? 'text-blue-100' : 'text-gray-500'

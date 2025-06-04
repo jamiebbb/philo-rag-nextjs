@@ -5,9 +5,10 @@ import { DocumentUpload } from '@/components/DocumentUpload'
 import { ChatInterface } from '@/components/ChatInterface'
 import { DocumentManager } from '@/components/DocumentManager'
 import { VectorStoreStatus } from '@/components/VectorStoreStatus'
+import { YouTubeUpload } from '@/components/YouTubeUpload'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'manage' | 'status'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'youtube' | 'manage' | 'status'>('chat')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -29,6 +30,7 @@ export default function Home() {
               {[
                 { id: 'chat', label: '💬 Chat', icon: '💬' },
                 { id: 'upload', label: '📄 Upload', icon: '📄' },
+                { id: 'youtube', label: '📺 YouTube', icon: '📺' },
                 { id: 'manage', label: '📚 Manage', icon: '📚' },
                 { id: 'status', label: '⚡ Status', icon: '⚡' },
               ].map((tab) => (
@@ -52,6 +54,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto">
           {activeTab === 'chat' && <ChatInterface />}
           {activeTab === 'upload' && <DocumentUpload />}
+          {activeTab === 'youtube' && <YouTubeUpload />}
           {activeTab === 'manage' && <DocumentManager />}
           {activeTab === 'status' && <VectorStoreStatus />}
         </div>

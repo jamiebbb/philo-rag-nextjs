@@ -8,6 +8,8 @@ export async function POST(request: NextRequest) {
     const files = formData.getAll('files') as File[]
     const metadataStr = formData.get('metadata') as string
     const splitterType = formData.get('splitterType') as string || 'recursive'
+    const chunkSize = parseInt(formData.get('chunkSize') as string) || 1000
+    const chunkOverlap = parseInt(formData.get('chunkOverlap') as string) || 200
 
     if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
@@ -17,16 +19,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Metadata is required' }, { status: 400 })
     }
 
-    // Initialize text splitter
-    const textSplitter = splitterType === 'character' 
-      ? new CharacterTextSplitter({
-          chunkSize: 1000,
-          chunkOverlap: 200,
+    // Initialize text splitter based on type
+    let textSplitter
+    
+    switch (splitterType) {
+      case 'character':
+        textSplitter = new CharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
         })
-      : new RecursiveCharacterTextSplitter({
-          chunkSize: 1000,
-          chunkOverlap: 200,
+        break
+      case 'markdown':
+        textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
+          separators: ['\n## ', '\n### ', '\n#### ', '\n\n', '\n', ' ', '']
         })
+        break
+      case 'html':
+        textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
+          separators: ['</div>', '</p>', '</h1>', '</h2>', '</h3>', '\n\n', '\n', ' ', '']
+        })
+        break
+      default: // recursive
+        textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize,
+          chunkOverlap,
+        })
+    }
 
     let allChunks: string[] = []
 
