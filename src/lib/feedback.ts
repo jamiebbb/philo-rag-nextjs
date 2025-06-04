@@ -40,6 +40,11 @@ export async function storeFeedback(
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available for feedback storage')
+      return false
+    }
+    
     const feedbackData: FeedbackRecord = {
       user_query: userQuery,
       ai_response: aiResponse,
@@ -97,6 +102,11 @@ export async function getRelevantFeedback(
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available for feedback retrieval')
+      return []
+    }
+    
     // Generate embedding for similarity search
     const queryEmbedding = await generateEmbedding(query)
 
@@ -142,6 +152,11 @@ export async function testFeedbackConnection(): Promise<boolean> {
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available for feedback connection test')
+      return false
+    }
+    
     const { error } = await client
       .from('feedback')
       .select('id')
@@ -169,6 +184,11 @@ export async function getFeedbackStats(): Promise<{
 }> {
   try {
     const client = getSupabaseClient()
+    
+    if (!client) {
+      console.error('Supabase client not available for feedback stats')
+      return { total: 0, by_type: {}, recent_count: 0 }
+    }
     
     const { data, error } = await client
       .from('feedback')
