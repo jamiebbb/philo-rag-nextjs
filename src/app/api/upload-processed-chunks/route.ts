@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openai'
+import { Document } from 'langchain/document'
+import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,140 +36,175 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Valid metadata with title is required' }, { status: 400 })
     }
 
-    // Validate chunk size (should be reasonable)
-    const totalChunkSize = chunks.reduce((sum: number, chunk: any) => sum + (chunk.content?.length || 0), 0)
-    const MAX_TOTAL_CHUNK_SIZE = 10 * 1024 * 1024 // 10MB of text chunks
-    
-    if (totalChunkSize > MAX_TOTAL_CHUNK_SIZE) {
-      console.error(`❌ Total chunk size too large: ${(totalChunkSize / 1024 / 1024).toFixed(1)}MB`)
-      return NextResponse.json({ 
-        error: `Total chunk size is too large (${(totalChunkSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 10MB.` 
-      }, { status: 413 })
-    }
-
-    let totalChunksStored = 0
-    let documentsCount = 0
-
-    // Generate document ID
-    const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2)}`
-
-    // Store document metadata
-    console.log(`💾 Storing document metadata for ${metadata.title}...`)
-    const { error: docError } = await supabase
-      .from('documents_enhanced')
-      .insert({
-        id: documentId,
-        title: metadata.title,
-        author: metadata.author || null,
-        doc_type: metadata.doc_type || null,
-        genre: metadata.genre || null,
-        content: processingInfo?.extractedText?.substring(0, 1000) || 'Preview not available', // First 1000 chars as preview
+    // Convert chunks to LangChain Document objects (like Streamlit does)
+    console.log('🔄 Converting chunks to LangChain Documents...')
+    const documents: Document[] = chunks.map((chunk: any, index: number) => {
+      if (!chunk.content || typeof chunk.content !== 'string') {
+        throw new Error(`Invalid chunk at index ${index}: content must be a string`)
+      }
+      
+      return new Document({
+        pageContent: chunk.content,
         metadata: {
           ...metadata,
-          chunk_count: chunks.length,
-          processing_time: processingInfo?.processingTime,
-          text_length: processingInfo?.textLength,
-          client_side_processed: true
+          chunk_index: index,
+          chunk_length: chunk.content.length,
+          source_type: 'pdf',
+          type: metadata.doc_type || 'Book',
+          source: `${metadata.title} (PDF)`
         }
       })
+    })
 
-    if (docError) {
-      console.error('❌ Error storing document metadata:', docError)
-      return NextResponse.json({ error: 'Failed to store document metadata' }, { status: 500 })
+    console.log(`✅ Created ${documents.length} LangChain Document objects`)
+
+    // Generate embeddings for all documents in batch (like Streamlit)
+    console.log('🔮 Generating embeddings in batch...')
+    const texts = documents.map(doc => doc.pageContent)
+    const embeddings: number[][] = []
+    
+    // Process in smaller batches to avoid API limits
+    const BATCH_SIZE = 10
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE)
+      console.log(`🔮 Processing embedding batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(texts.length/BATCH_SIZE)}`)
+      
+      for (const text of batch) {
+        const embedding = await generateEmbedding(text)
+        embeddings.push(embedding)
+      }
     }
 
-    documentsCount = 1
+    console.log(`✅ Generated ${embeddings.length} embeddings`)
 
-    // Process and store chunks with embeddings
-    console.log(`🔮 Generating embeddings for ${chunks.length} chunks...`)
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]
-      
-      console.log(`📊 Processing chunk ${i + 1}/${chunks.length} - Content length: ${chunk?.content?.length || 'N/A'}`)
-      console.log(`📊 Chunk structure:`, Object.keys(chunk || {}))
-      
-      if (!chunk.content || typeof chunk.content !== 'string') {
-        console.warn(`⚠️ Skipping invalid chunk ${i}: content type = ${typeof chunk.content}, content = ${JSON.stringify(chunk).substring(0, 200)}`)
-        continue
-      }
+    // Generate document ID for this upload batch
+    const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2)}`
+    let totalChunksStored = 0
 
-      if (chunk.content.trim().length === 0) {
-        console.warn(`⚠️ Skipping empty chunk ${i}`)
-        continue
+    // Insert documents following Streamlit pattern
+    console.log('💾 Inserting documents into Supabase...')
+    
+    for (let i = 0; i < documents.length; i++) {
+      const doc = documents[i]
+      const embedding = embeddings[i]
+      
+      // Generate unique chunk ID
+      const chunkId = `${documentId}_chunk_${i}`
+      
+      // Prepare data exactly like Streamlit does
+      const insertData = {
+        id: chunkId,
+        content: doc.pageContent,
+        metadata: doc.metadata,
+        embedding: embedding,
+        // Dedicated columns (following Streamlit schema)
+        title: metadata.title,
+        author: metadata.author || null,
+        doc_type: metadata.doc_type || 'Book',
+        genre: metadata.genre || 'Educational',
+        topic: metadata.topic || null,
+        difficulty: metadata.difficulty || 'Intermediate',
+        tags: metadata.tags || '',
+        source_type: 'pdf',
+        summary: metadata.summary || '',
+        chunk_id: i + 1,
+        total_chunks: documents.length,
+        source: `${metadata.title} (PDF)`
       }
 
       try {
-        console.log(`🔮 Generating embedding for chunk ${i}...`)
-        // Generate embedding for the chunk
-        const embedding = await generateEmbedding(chunk.content)
-        console.log(`✅ Embedding generated for chunk ${i} - Vector length: ${embedding?.length}`)
-
-        console.log(`💾 Storing chunk ${i} in Supabase...`)
-        // Store chunk with embedding
-        const { data: insertData, error: chunkError } = await supabase
+        console.log(`💾 Inserting chunk ${i + 1}/${documents.length}...`)
+        
+        const { data: insertResult, error: insertError } = await supabase
           .from('documents_enhanced')
-          .insert({
-            id: `${documentId}_chunk_${i}`,
-            title: metadata.title,
-            author: metadata.author || null,
-            doc_type: metadata.doc_type || null,
-            genre: metadata.genre || null,
-            content: chunk.content,
-            metadata: {
-              ...metadata,
-              chunk_index: i,
-              chunk_length: chunk.content.length, // Use content.length instead of chunk.length
-              parent_document: documentId,
-              client_side_processed: true
-            },
-            embedding: embedding
-          })
+          .insert(insertData)
           .select('id')
 
-        if (chunkError) {
-          console.error(`❌ Error storing chunk ${i}:`, chunkError)
-          console.error(`❌ Chunk data:`, {
-            id: `${documentId}_chunk_${i}`,
-            title: metadata.title,
-            contentLength: chunk.content.length,
-            embeddingLength: embedding?.length
-          })
-        } else {
-          console.log(`✅ Successfully stored chunk ${i} with ID: ${insertData?.[0]?.id}`)
+        if (insertError) {
+          console.error(`❌ Error inserting chunk ${i}:`, insertError)
+          console.error('Insert data keys:', Object.keys(insertData))
+          throw insertError
+        }
+
+        if (insertResult && insertResult.length > 0) {
+          console.log(`✅ Successfully inserted chunk ${i + 1} with ID: ${insertResult[0].id}`)
           totalChunksStored++
+        } else {
+          console.warn(`⚠️ No data returned for chunk ${i}`)
         }
 
         // Show progress for large uploads
-        if (chunks.length > 50 && (i + 1) % 25 === 0) {
-          console.log(`📊 Processed ${i + 1}/${chunks.length} chunks`)
+        if (documents.length > 20 && (i + 1) % 10 === 0) {
+          console.log(`📊 Progress: ${i + 1}/${documents.length} chunks processed`)
         }
 
-      } catch (embeddingError) {
-        console.error(`❌ Error processing chunk ${i}:`, embeddingError)
-        console.error(`❌ Chunk content preview:`, chunk.content?.substring(0, 200))
-        // Continue with next chunk instead of stopping
+      } catch (error) {
+        console.error(`❌ Failed to insert chunk ${i}:`, error)
+        console.error(`❌ Chunk content preview:`, doc.pageContent.substring(0, 200))
+        // Continue with next chunk instead of failing completely
       }
     }
 
-    console.log(`🎉 Upload completed: ${documentsCount} documents, ${totalChunksStored} chunks`)
+    // Also insert a main document record (like Streamlit)
+    console.log('💾 Inserting main document record...')
+    try {
+      const { error: docError } = await supabase
+        .from('documents_enhanced')
+        .insert({
+          id: documentId,
+          title: metadata.title,
+          author: metadata.author || null,
+          doc_type: metadata.doc_type || 'Book',
+          genre: metadata.genre || 'Educational',
+          content: `Document: ${metadata.title} - ${documents.length} chunks`,
+          metadata: {
+            ...metadata,
+            is_parent_document: true,
+            chunk_count: documents.length,
+            processing_time: processingInfo?.processingTime,
+            text_length: processingInfo?.textLength,
+            client_side_processed: true
+          },
+          source_type: 'pdf',
+          summary: metadata.summary || '',
+          chunk_id: 0, // Parent document
+          total_chunks: documents.length,
+          source: `${metadata.title} (PDF)`
+        })
+
+      if (docError) {
+        console.error('❌ Error storing main document record:', docError)
+      } else {
+        console.log('✅ Successfully stored main document record')
+      }
+    } catch (error) {
+      console.error('❌ Failed to store main document record:', error)
+    }
+
+    console.log(`🎉 Upload completed: ${totalChunksStored} chunks stored successfully`)
 
     return NextResponse.json({
       success: true,
-      documentsCount,
+      documentsCount: 1,
       chunksCount: totalChunksStored,
       documentId,
-      message: `Successfully processed ${documentsCount} documents with ${totalChunksStored} chunks`,
+      message: `Successfully processed ${totalChunksStored} chunks`,
       processingInfo: {
-        totalChunks: chunks.length,
+        totalChunks: documents.length,
         chunksStored: totalChunksStored,
-        skippedChunks: chunks.length - totalChunksStored
+        skippedChunks: documents.length - totalChunksStored,
+        embeddings: embeddings.length
       }
     })
 
   } catch (error) {
     console.error('❌ Error in upload processed chunks API:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Internal server error', 
+        details: error instanceof Error ? error.message : 'Unknown error',
+        success: false 
+      },
       { status: 500 }
     )
   }

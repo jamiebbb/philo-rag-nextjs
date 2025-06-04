@@ -266,6 +266,51 @@ export default function DocumentUploadClient() {
     }
   }
 
+  const testChunkStructure = async () => {
+    if (!processedData || !processedData.chunks || processedData.chunks.length === 0) {
+      setError('No processed chunks available to test')
+      return
+    }
+
+    try {
+      console.log('🔍 Testing chunk structure...')
+      const response = await fetch('/api/test-chunk-structure', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          chunks: processedData.chunks,
+          metadata,
+          processingInfo: {
+            processingTime: processedData.result.processingTime,
+            textLength: processedData.result.textLength,
+            totalFiles: files.length,
+            extractedText: processedData.result.extractedText
+          }
+        })
+      })
+
+      const result = await response.json()
+      console.log('🔍 Chunk structure test result:', result)
+      
+      const debug = result.debug
+      alert(`Chunk Structure Test Results:
+
+📊 Chunks received: ${debug?.chunksLength}
+📊 Valid chunks: ${debug?.validChunksCount}
+📊 First chunk keys: ${debug?.firstChunkKeys?.join(', ')}
+📊 Content type: ${debug?.firstChunkContentType}
+📊 Content length: ${debug?.firstChunkContentLength}
+
+Check console for detailed logs and chunk sample.`)
+      
+    } catch (error) {
+      console.error('Chunk structure test error:', error)
+      alert(`Chunk structure test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   const resetForNewUpload = () => {
     setFiles([])
     setProcessedData(null)
@@ -595,6 +640,17 @@ export default function DocumentUploadClient() {
                   >
                     <Eye className="w-4 h-4" />
                     {progress?.stage === 'uploading' ? 'Testing...' : 'Debug Test Upload'}
+                  </button>
+                )}
+
+                {processedData && (
+                  <button
+                    onClick={testChunkStructure}
+                    disabled={progress?.stage === 'uploading'}
+                    className="px-6 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    {progress?.stage === 'uploading' ? 'Testing...' : 'Test Chunk Structure'}
                   </button>
                 )}
               </>
