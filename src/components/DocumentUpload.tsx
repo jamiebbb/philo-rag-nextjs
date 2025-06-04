@@ -22,6 +22,7 @@ export function DocumentUpload() {
   const [splitterType, setSplitterType] = useState<'recursive' | 'character' | 'markdown' | 'html'>('recursive')
   const [chunkSize, setChunkSize] = useState(1000)
   const [chunkOverlap, setChunkOverlap] = useState(200)
+  const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
@@ -48,6 +49,37 @@ export function DocumentUpload() {
 
   const handleMetadataChange = (field: keyof DocumentMetadata, value: string) => {
     setMetadata(prev => ({ ...prev, [field]: value }))
+  }
+
+  const generateMetadata = async () => {
+    if (!metadata.title.trim()) {
+      alert('Please enter a title first')
+      return
+    }
+
+    setIsGeneratingMetadata(true)
+    try {
+      const response = await fetch('/api/generate-document-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: metadata.title.trim() })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setMetadata(prev => ({
+          ...prev,
+          ...data.metadata
+        }))
+      } else {
+        alert('Failed to generate metadata. Please enter manually.')
+      }
+    } catch (error) {
+      console.error('Error generating metadata:', error)
+      alert('Failed to generate metadata. Please enter manually.')
+    } finally {
+      setIsGeneratingMetadata(false)
+    }
   }
 
   const previewChunks = async () => {
@@ -237,14 +269,33 @@ export function DocumentUpload() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Title *
               </label>
-              <input
-                type="text"
-                value={metadata.title}
-                onChange={(e) => handleMetadataChange('title', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Document title"
-                required
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={metadata.title}
+                  onChange={(e) => handleMetadataChange('title', e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Document title"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={generateMetadata}
+                  disabled={!metadata.title.trim() || isGeneratingMetadata}
+                  className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isGeneratingMetadata ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      🧠 Generate Metadata
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

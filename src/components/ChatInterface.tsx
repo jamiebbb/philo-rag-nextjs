@@ -184,7 +184,7 @@ export function ChatInterface() {
                   <div className="whitespace-pre-wrap">
                     <ReactMarkdown
                       components={{
-                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
                         strong: ({ children }) => (
                           <strong className={`font-bold ${
                             message.role === 'user' ? 'text-white' : 'text-gray-900'
