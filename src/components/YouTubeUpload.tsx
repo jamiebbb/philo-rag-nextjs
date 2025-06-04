@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Upload, Loader2, CheckCircle, AlertCircle, Settings, Youtube, Eye, Link, Sparkles } from 'lucide-react'
+import { Upload, Loader2, CheckCircle, AlertCircle, Settings, Youtube, Eye, Link, Sparkles, RefreshCw } from 'lucide-react'
 
 interface VideoMetadata {
   title: string
@@ -11,6 +11,10 @@ interface VideoMetadata {
   topic: string
   tags: string
   difficulty: string
+  youtube_channel: string
+  video_id: string
+  source_url: string
+  source_type: string
 }
 
 interface ProcessResult {
@@ -25,7 +29,9 @@ interface ProcessResult {
 export function YouTubeUpload() {
   const [url, setUrl] = useState('')
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [cleanedTranscript, setCleanedTranscript] = useState<string>('')
+  const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [chunkSize, setChunkSize] = useState(400)
   const [chunkOverlap, setChunkOverlap] = useState(200)
@@ -42,59 +48,69 @@ export function YouTubeUpload() {
     return extractVideoId(url) !== null
   }
 
-  const fetchVideoInfo = async () => {
+  const generateMetadata = async () => {
     if (!url.trim() || !isValidYouTubeUrl(url.trim())) return
 
-    try {
-      setProcessingStep('Fetching video information...')
-      const videoId = extractVideoId(url.trim())
-      
-      // Fetch from YouTube oEmbed API for basic info
-      const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url.trim())}&format=json`)
-      
-      if (response.ok) {
-        const data = await response.json()
-        setVideoMetadata({
-          title: data.title || `YouTube Video ${videoId}`,
-          author: data.author_name || 'Unknown Channel',
-          summary: '',
-          genre: '',
-          topic: '',
-          tags: '',
-          difficulty: ''
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching video info:', error)
-      // Still allow processing even if preview fails
-      const videoId = extractVideoId(url.trim())
-      setVideoMetadata({
-        title: `YouTube Video ${videoId}`,
-        author: 'Unknown Channel',
-        summary: '',
-        genre: '',
-        topic: '',
-        tags: '',
-        difficulty: ''
-      })
-    } finally {
-      setProcessingStep('')
-    }
-  }
-
-  const processVideo = async () => {
-    if (!url.trim() || !isValidYouTubeUrl(url.trim())) return
-
-    setIsProcessing(true)
+    setIsGeneratingMetadata(true)
     setResult(null)
-    setProcessingStep('Initializing video processing...')
+    setProcessingStep('Fetching video metadata and transcript...')
 
     try {
-      const response = await fetch('/api/youtube/process-improved', {
+      const videoId = extractVideoId(url.trim())
+      
+      const response = await fetch('/api/youtube/generate-metadata', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: url.trim(),
+          videoId
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setVideoMetadata(data.metadata)
+        setCleanedTranscript(data.cleanedTranscript)
+        setProcessingStep('')
+      } else {
+        setResult({
+          success: false,
+          message: data.error || 'Failed to generate metadata'
+        })
+      }
+    } catch (error) {
+      console.error('Error generating metadata:', error)
+      setResult({
+        success: false,
+        message: 'Error generating metadata. Please check your connection and try again.'
+      })
+    } finally {
+      setIsGeneratingMetadata(false)
+      setProcessingStep('')
+    }
+  }
+
+  const uploadToSupabase = async () => {
+    if (!videoMetadata || !cleanedTranscript) {
+      setResult({
+        success: false,
+        message: 'Please generate metadata first'
+      })
+      return
+    }
+
+    setIsUploading(true)
+    setResult(null)
+    setProcessingStep('Processing and uploading to Supabase...')
+
+    try {
+      const response = await fetch('/api/youtube/upload-to-supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoMetadata,
+          cleanedTranscript,
           chunkSize,
           chunkOverlap
         })
@@ -105,27 +121,26 @@ export function YouTubeUpload() {
       if (response.ok) {
         setResult({
           success: true,
-          message: `Successfully processed and uploaded to Supabase vector database!`,
-          metadata: data.metadata,
-          transcriptLength: data.transcriptLength,
+          message: `Successfully uploaded ${data.chunksAdded} chunks to Supabase vector database!`,
+          metadata: videoMetadata,
+          transcriptLength: cleanedTranscript.length,
           chunksAdded: data.chunksAdded,
-          videoId: data.videoId
+          videoId: videoMetadata.video_id
         })
-        // Keep the URL for potential reprocessing but show success
       } else {
         setResult({
           success: false,
-          message: data.error || 'Failed to process YouTube video'
+          message: data.error || 'Failed to upload to Supabase'
         })
       }
     } catch (error) {
-      console.error('Error processing YouTube video:', error)
+      console.error('Error uploading to Supabase:', error)
       setResult({
         success: false,
-        message: 'Error processing YouTube video. Please check your connection and try again.'
+        message: 'Error uploading to Supabase. Please check your connection and try again.'
       })
     } finally {
-      setIsProcessing(false)
+      setIsUploading(false)
       setProcessingStep('')
     }
   }
@@ -133,8 +148,18 @@ export function YouTubeUpload() {
   const resetForm = () => {
     setUrl('')
     setVideoMetadata(null)
+    setCleanedTranscript('')
     setResult(null)
     setProcessingStep('')
+  }
+
+  const updateMetadata = (field: keyof VideoMetadata, value: string) => {
+    if (videoMetadata) {
+      setVideoMetadata({
+        ...videoMetadata,
+        [field]: value
+      })
+    }
   }
 
   return (
@@ -152,7 +177,7 @@ export function YouTubeUpload() {
             Add YouTube Video
           </h3>
           <p className="text-gray-600 mb-4">
-            Paste a YouTube URL to automatically extract transcript and generate intelligent metadata
+            Paste a YouTube URL to extract transcript and generate intelligent metadata
           </p>
           
           <div className="max-w-md mx-auto">
@@ -160,7 +185,6 @@ export function YouTubeUpload() {
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              onBlur={fetchVideoInfo}
               placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
               className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center ${
                 url.trim() && !isValidYouTubeUrl(url.trim()) 
@@ -172,93 +196,166 @@ export function YouTubeUpload() {
               <p className="mt-2 text-sm text-red-600">Please enter a valid YouTube URL</p>
             )}
           </div>
-        </div>
 
-        {/* Video Preview Card */}
-        {url.trim() && isValidYouTubeUrl(url.trim()) && (
-          <div className="mt-4 max-w-md mx-auto">
-            <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
-              <div className="flex items-center gap-3">
-                <Youtube className="w-6 h-6 text-red-500" />
-                <div>
-                  <p className="font-medium text-gray-900">
-                    {videoMetadata?.title || 'YouTube Video'}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {videoMetadata?.author || 'Fetching channel info...'}
-                  </p>
-                </div>
-              </div>
-              <Sparkles className="w-5 h-5 text-red-500" />
+          {/* Step 1: Generate Metadata Button */}
+          {url.trim() && isValidYouTubeUrl(url.trim()) && !videoMetadata && (
+            <div className="mt-4">
+              <button
+                onClick={generateMetadata}
+                disabled={isGeneratingMetadata}
+                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 mx-auto"
+              >
+                {isGeneratingMetadata ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating Metadata...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    🤖 Generate Metadata
+                  </>
+                )}
+              </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Video Metadata Display */}
-      {videoMetadata && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-          <h3 className="font-medium text-gray-900 mb-4">Video Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Title
-              </label>
-              <div className="px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900">
-                {videoMetadata.title}
-              </div>
-            </div>
+      {/* Processing Status */}
+      {(isGeneratingMetadata || isUploading) && (
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Channel/Author
-              </label>
-              <div className="px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900">
-                {videoMetadata.author}
-              </div>
+              <p className="font-medium text-blue-900">
+                {isGeneratingMetadata ? 'Generating Metadata...' : 'Uploading to Supabase...'}
+              </p>
+              <p className="text-sm text-blue-700">{processingStep || 'Processing...'}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Metadata Review & Edit Form */}
+      {videoMetadata && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-green-800">📝 Review & Edit YouTube Video Metadata</h3>
+            <button
+              onClick={generateMetadata}
+              disabled={isGeneratingMetadata}
+              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Regenerate
+            </button>
+          </div>
           
-          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              AI Processing & Auto-Upload Workflow
-            </h4>
-            <div className="text-sm text-blue-800 space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                Downloads transcript using SUPADATA API
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                Corrects grammar and structures transcript with GPT-4o-mini
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                AI analyzes content to extract topic, difficulty, and summary
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                Generates optimized chunks for semantic search
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                <strong>Automatically uploads to Supabase vector database</strong>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input
+                type="text"
+                value={videoMetadata.title}
+                onChange={(e) => updateMetadata('title', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
-            <div className="mt-2 p-2 bg-green-100 rounded text-xs text-green-800">
-              ✨ <strong>One-click processing:</strong> Video is automatically processed and uploaded to your vector database for RAG chat!
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Author/Speaker</label>
+              <input
+                type="text"
+                value={videoMetadata.author}
+                onChange={(e) => updateMetadata('author', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">YouTube Channel</label>
+              <input
+                type="text"
+                value={videoMetadata.youtube_channel}
+                disabled
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+              <select
+                value={videoMetadata.genre}
+                onChange={(e) => updateMetadata('genre', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Educational">Educational</option>
+                <option value="Tutorial">Tutorial</option>
+                <option value="Documentary">Documentary</option>
+                <option value="Interview">Interview</option>
+                <option value="Lecture">Lecture</option>
+                <option value="Entertainment">Entertainment</option>
+                <option value="News">News</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Topic</label>
+              <input
+                type="text"
+                value={videoMetadata.topic}
+                onChange={(e) => updateMetadata('topic', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
+              <select
+                value={videoMetadata.difficulty}
+                onChange={(e) => updateMetadata('difficulty', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+                <option value="Expert">Expert</option>
+              </select>
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+              <input
+                type="text"
+                value={videoMetadata.tags}
+                onChange={(e) => updateMetadata('tags', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="comma, separated, tags"
+              />
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Summary</label>
+              <textarea
+                value={videoMetadata.summary}
+                onChange={(e) => updateMetadata('summary', e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
           </div>
 
-          {/* Advanced Settings */}
-          <div className="mt-4">
+          {/* Chunking Parameters */}
+          <div className="mt-6">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800"
             >
               <Settings className="w-4 h-4" />
-              Advanced Chunking Settings
+              Chunking Parameters
             </button>
 
             {showAdvanced && (
@@ -271,11 +368,12 @@ export function YouTubeUpload() {
                     type="number"
                     value={chunkSize}
                     onChange={(e) => setChunkSize(Number(e.target.value))}
-                    min="100"
-                    max="5000"
+                    min="200"
+                    max="2000"
+                    step="50"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (100-5000)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (200-2000)</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -286,29 +384,42 @@ export function YouTubeUpload() {
                     value={chunkOverlap}
                     onChange={(e) => setChunkOverlap(Number(e.target.value))}
                     min="0"
-                    max="1000"
+                    max="300"
+                    step="25"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters overlap between chunks (0-1000)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters overlap (0-300)</p>
                 </div>
               </div>
             )}
           </div>
-        </div>
-      )}
 
-      {/* Processing Status */}
-      {isProcessing && (
-        <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-            <div>
-              <p className="font-medium text-blue-900">Processing & Uploading to Supabase...</p>
-              <p className="text-sm text-blue-700">{processingStep || 'Extracting transcript and generating embeddings...'}</p>
-            </div>
-          </div>
-          <div className="mt-3 text-xs text-blue-600">
-            This may take 30-60 seconds depending on video length. The video will be automatically uploaded to your vector database.
+          {/* Step 2: Upload Button */}
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={uploadToSupabase}
+              disabled={isUploading}
+              className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  ✅ Upload to Supabase
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={resetForm}
+              className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -335,16 +446,6 @@ export function YouTubeUpload() {
               
               {result.success && result.metadata && (
                 <div className="mt-3 space-y-2">
-                  <div className="p-3 bg-green-100 rounded border border-green-300 mb-3">
-                    <p className="font-medium text-green-800 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      ✅ Successfully uploaded to Supabase vector database
-                    </p>
-                    <p className="text-sm text-green-700 mt-1">
-                      Video content is now available for RAG chat queries. You can find it in your Documents Manager.
-                    </p>
-                  </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div className="bg-white p-3 rounded border">
                       <p className="font-medium text-gray-700">📊 Processing Stats</p>
@@ -371,7 +472,7 @@ export function YouTubeUpload() {
                   
                   {result.metadata.summary && (
                     <div className="bg-white p-3 rounded border">
-                      <p className="font-medium text-gray-700 mb-1">📝 Auto-Generated Summary</p>
+                      <p className="font-medium text-gray-700 mb-1">📝 Summary</p>
                       <p className="text-sm text-gray-600">{result.metadata.summary}</p>
                     </div>
                   )}
@@ -394,36 +495,6 @@ export function YouTubeUpload() {
           </div>
         </div>
       )}
-
-      {/* Action Buttons */}
-      <div className="flex gap-3">
-        <button
-          onClick={processVideo}
-          disabled={!url.trim() || !isValidYouTubeUrl(url.trim()) || isProcessing}
-          className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Processing & Uploading...
-            </>
-          ) : (
-            <>
-              <Upload className="w-4 h-4" />
-              🚀 Process & Upload to Supabase
-            </>
-          )}
-        </button>
-
-        {(result || url.trim()) && (
-          <button
-            onClick={resetForm}
-            className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-          >
-            Reset
-          </button>
-        )}
-      </div>
     </div>
   )
 } 

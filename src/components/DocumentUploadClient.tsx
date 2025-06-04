@@ -175,8 +175,8 @@ export default function DocumentUploadClient() {
   }
 
   const uploadToVectorStore = async () => {
-    if (!processedData) {
-      alert('Please process files first')
+    if (!processedData || !processedData.chunks || processedData.chunks.length === 0) {
+      setError('No processed chunks available to upload')
       return
     }
 
@@ -198,7 +198,8 @@ export default function DocumentUploadClient() {
           processingInfo: {
             processingTime: processedData.result.processingTime,
             textLength: processedData.result.textLength,
-            totalFiles: files.length
+            totalFiles: files.length,
+            extractedText: processedData.result.extractedText
           }
         })
       })
@@ -241,6 +242,41 @@ export default function DocumentUploadClient() {
         message: 'Upload failed', 
         progress: 0 
       })
+    }
+  }
+
+  const debugTestUpload = async () => {
+    if (!processedData || !processedData.chunks || processedData.chunks.length === 0) {
+      setError('No processed chunks available to test')
+      return
+    }
+
+    try {
+      console.log('🔍 Testing upload data format...')
+      const response = await fetch('/api/debug-upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          chunks: processedData.chunks,
+          metadata,
+          processingInfo: {
+            processingTime: processedData.result.processingTime,
+            textLength: processedData.result.textLength,
+            totalFiles: files.length,
+            extractedText: processedData.result.extractedText
+          }
+        })
+      })
+
+      const result = await response.json()
+      console.log('🔍 Debug test result:', result)
+      alert(`Debug Test Results:\n\nChunks received: ${result.debug?.chunksReceived}\nFirst chunk valid: ${result.debug?.firstChunkValid}\nFirst chunk length: ${result.debug?.firstChunkLength}\n\nCheck console for detailed logs.`)
+      
+    } catch (error) {
+      console.error('Debug test error:', error)
+      alert(`Debug test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -467,13 +503,49 @@ export default function DocumentUploadClient() {
 
         {/* Processed Data Preview */}
         {processedData && (
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <h4 className="font-semibold text-green-800 mb-2">Processing Complete!</h4>
-            <div className="text-sm text-green-700 space-y-1">
-              <p>📄 Files processed: {files.length}</p>
-              <p>✂️ Chunks created: {processedData.chunks.length}</p>
-              <p>📝 Total text length: {processedData.result.textLength.toLocaleString()} characters</p>
-              <p>⏱️ Processing time: {processedData.result.processingTime}ms</p>
+          <div className="mt-6 space-y-4">
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <h4 className="font-semibold text-green-800 mb-2">✅ Processing Complete!</h4>
+              <div className="text-sm text-green-700 space-y-1">
+                <p>📄 Files processed: {files.length}</p>
+                <p>✂️ Chunks created: {processedData.chunks.length}</p>
+                <p>📝 Total text length: {processedData.result.textLength.toLocaleString()} characters</p>
+                <p>⏱️ Processing time: {processedData.result.processingTime}ms</p>
+              </div>
+            </div>
+
+            {/* Chunk Preview */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 className="font-semibold text-blue-800 mb-3">📄 Chunk Preview</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                {processedData.chunks.slice(0, 6).map((chunk: any, index: number) => (
+                  <div key={index} className="bg-white p-3 rounded border border-blue-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-blue-600">
+                        Chunk {index + 1}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {chunk.content.length} chars
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-700 leading-relaxed">
+                      {chunk.content.length > 300 ? (
+                        <>
+                          {chunk.content.substring(0, 300)}
+                          <span className="text-blue-500 font-medium">... (truncated)</span>
+                        </>
+                      ) : (
+                        chunk.content
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {processedData.chunks.length > 6 && (
+                <p className="text-xs text-blue-600 mt-2 text-center">
+                  Showing 6 of {processedData.chunks.length} chunks
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -498,6 +570,17 @@ export default function DocumentUploadClient() {
               >
                 <Send className="w-4 h-4" />
                 {progress?.stage === 'uploading' ? 'Uploading...' : 'Upload to Vector Store'}
+              </button>
+            )}
+
+            {processedData && (
+              <button
+                onClick={debugTestUpload}
+                disabled={progress?.stage === 'uploading'}
+                className="px-6 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Eye className="w-4 h-4" />
+                {progress?.stage === 'uploading' ? 'Testing...' : 'Debug Test Upload'}
               </button>
             )}
           </div>

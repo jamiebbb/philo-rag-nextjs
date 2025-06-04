@@ -18,14 +18,17 @@ export async function POST(request: NextRequest) {
     console.log('📊 Received data:', {
       chunksCount: chunks?.length,
       metadata: metadata?.title,
-      processingTime: processingInfo?.processingTime
+      processingTime: processingInfo?.processingTime,
+      firstChunkSample: chunks?.[0]?.content?.substring(0, 100)
     })
 
+    console.log('🔍 Validating chunks...')
     if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
       console.error('❌ No chunks provided')
       return NextResponse.json({ error: 'No chunks provided' }, { status: 400 })
     }
 
+    console.log('🔍 Validating metadata...')
     if (!metadata || !metadata.title) {
       console.error('❌ Invalid metadata provided')
       return NextResponse.json({ error: 'Valid metadata with title is required' }, { status: 400 })
@@ -80,17 +83,27 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
       
+      console.log(`📊 Processing chunk ${i + 1}/${chunks.length} - Length: ${chunk?.content?.length || 'N/A'}`)
+      
       if (!chunk.content || typeof chunk.content !== 'string') {
-        console.warn(`⚠️ Skipping invalid chunk ${i}`)
+        console.warn(`⚠️ Skipping invalid chunk ${i}: content type = ${typeof chunk.content}, length = ${chunk.content?.length}`)
+        continue
+      }
+
+      if (chunk.content.trim().length === 0) {
+        console.warn(`⚠️ Skipping empty chunk ${i}`)
         continue
       }
 
       try {
+        console.log(`🔮 Generating embedding for chunk ${i}...`)
         // Generate embedding for the chunk
         const embedding = await generateEmbedding(chunk.content)
+        console.log(`✅ Embedding generated for chunk ${i} - Vector length: ${embedding?.length}`)
 
+        console.log(`💾 Storing chunk ${i} in Supabase...`)
         // Store chunk with embedding
-        const { error: chunkError } = await supabase
+        const { data: insertData, error: chunkError } = await supabase
           .from('documents_enhanced')
           .insert({
             id: `${documentId}_chunk_${i}`,
@@ -108,10 +121,12 @@ export async function POST(request: NextRequest) {
             },
             embedding: embedding
           })
+          .select('id')
 
         if (chunkError) {
           console.error(`❌ Error storing chunk ${i}:`, chunkError)
         } else {
+          console.log(`✅ Successfully stored chunk ${i} with ID: ${insertData?.[0]?.id}`)
           totalChunksStored++
         }
 
@@ -122,6 +137,7 @@ export async function POST(request: NextRequest) {
 
       } catch (embeddingError) {
         console.error(`❌ Error generating embedding for chunk ${i}:`, embeddingError)
+        console.error(`❌ Chunk content preview:`, chunk.content?.substring(0, 200))
       }
     }
 
@@ -147,4 +163,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-} 
+}
