@@ -1,9 +1,12 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, FileText, Eye, Send, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { processPDFFile, validatePDFFile, ProcessedChunk, PDFProcessingResult } from '@/lib/client-pdf-processor'
+
+// Browser environment check
+const isBrowser = typeof window !== 'undefined'
 
 interface Metadata {
   title: string
@@ -23,6 +26,13 @@ interface ProcessingProgress {
 }
 
 export default function DocumentUploadClient() {
+  const [isMounted, setIsMounted] = useState(false)
+  
+  // Only mount the component on the client side
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
   const [files, setFiles] = useState<File[]>([])
   const [metadata, setMetadata] = useState<Metadata>({
     title: '',
@@ -326,6 +336,20 @@ Check console for detailed logs and chunk sample.`)
       difficulty: 'Intermediate',
       doc_type: 'Book'
     })
+  }
+
+  // Don't render on server or before client hydration
+  if (!isBrowser || !isMounted) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="flex justify-center items-center min-h-[50vh]">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+            <span className="ml-4 text-gray-600">Loading client-side PDF processor...</span>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

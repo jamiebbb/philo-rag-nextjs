@@ -1,15 +1,38 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Server, Monitor, FileText, Youtube } from 'lucide-react'
 import { DocumentUpload } from './DocumentUpload'
 import DocumentUploadClient from './DocumentUploadClient'
 import { YouTubeUpload } from './YouTubeUpload'
 
+// Browser environment check
+const isBrowser = typeof window !== 'undefined'
+
 type TabType = 'server' | 'client' | 'youtube'
 
 export default function UploadTabs() {
   const [activeTab, setActiveTab] = useState<TabType>('client')
+  const [isMounted, setIsMounted] = useState(false)
+
+  // Only mount the component on the client side
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  // Don't render on server or before client hydration
+  if (!isBrowser || !isMounted) {
+    return (
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="flex justify-center items-center min-h-[50vh]">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+            <span className="ml-4 text-gray-600">Loading upload interface...</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const tabs = [
     {
