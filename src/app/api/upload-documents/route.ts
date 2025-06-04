@@ -15,58 +15,28 @@ export async function POST(request: NextRequest) {
     const files = formData.getAll('files') as File[]
     const metadataStr = formData.get('metadata') as string
     const splitterType = formData.get('splitterType') as string || 'recursive'
-    const chunkSize = parseInt(formData.get('chunkSize') as string) || 1000
-    const chunkOverlap = parseInt(formData.get('chunkOverlap') as string) || 200
+    const chunkSize = parseInt(formData.get('chunkSize') as string) || 5000
+    const chunkOverlap = parseInt(formData.get('chunkOverlap') as string) || 500
     const pdfParser = formData.get('pdfParser') as ParserType || 'pdf-parse'
 
-    console.log('📊 Upload data:', {
-      filesCount: files.length,
-      metadataLength: metadataStr?.length,
+    console.log('📤 Upload request:', {
+      fileCount: files.length,
       splitterType,
       chunkSize,
       chunkOverlap,
-      pdfParser
+      fileSizes: files.map(f => `${f.name}: ${(f.size / 1024 / 1024).toFixed(1)}MB`)
     })
 
     if (!files || files.length === 0) {
-      console.error('❌ No files provided for upload')
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
 
     if (!metadataStr) {
-      console.error('❌ No metadata provided for upload')
       return NextResponse.json({ error: 'Metadata is required' }, { status: 400 })
     }
 
-    // File size validation - Vercel has 4.5MB request body limit
-    const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB per file
-    const MAX_TOTAL_SIZE = 3 * 1024 * 1024 // 3MB total
-    
-    // Check individual file sizes
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        console.error(`❌ File too large for upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
-        return NextResponse.json({ 
-          error: `File "${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 2MB per file.` 
-        }, { status: 413 })
-      }
-    }
-
-    // Check total payload size
-    const totalSize = files.reduce((sum, file) => sum + file.size, 0)
-    if (totalSize > MAX_TOTAL_SIZE) {
-      console.error(`❌ Total payload too large for upload: ${(totalSize / 1024 / 1024).toFixed(1)}MB`)
-      return NextResponse.json({ 
-        error: `Total file size is too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum allowed is 3MB total.` 
-      }, { status: 413 })
-    }
-
-    // Validate chunk size
-    if (chunkSize < 100 || chunkSize > 5000) {
-      return NextResponse.json({ 
-        error: 'Chunk size must be between 100 and 5000 characters' 
-      }, { status: 400 })
-    }
+    // No file size validation - server can handle large files
+    console.log('📤 Processing files for upload (no size limits)...')
 
     const metadata = JSON.parse(metadataStr)
     let totalChunks = 0

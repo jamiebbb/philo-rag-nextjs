@@ -11,37 +11,103 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
-    // Get server-side Supabase client
-    const supabase = createServerSupabaseClient()
+    console.log('💬 Chat API called with message:', message.substring(0, 100) + '...')
+
+    // Get server-side Supabase client with error handling
+    let supabase
+    try {
+      supabase = createServerSupabaseClient()
+      console.log('✅ Supabase client created successfully')
+    } catch (error) {
+      console.error('❌ Failed to create Supabase client:', error)
+      return NextResponse.json({ 
+        error: 'Database connection failed',
+        details: 'Unable to connect to document database. Please check configuration.',
+        response: 'I apologize, but I cannot access the document database at the moment. Please try again later or contact support if the issue persists.',
+        sources: [],
+        documentsFound: 0
+      }, { status: 500 })
+    }
 
     // Get relevant feedback for context (server-side)
     const relevantFeedback = await getRelevantFeedback(message.trim(), 3)
 
-    // Generate embedding for the user's message
-    const queryEmbedding = await generateEmbedding(message)
-
-    // Search for relevant documents using enhanced vector store
-    let { data: documents, error } = await supabase.rpc('match_documents_enhanced', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.7,
-      match_count: 5
-    })
-
-    if (error) {
-      console.error('Error searching documents:', error)
-      // Try fallback search if enhanced search fails
-      const { data: fallbackDocs, error: fallbackError } = await supabase
-        .from('documents_enhanced')
-        .select('id, content, title, author, doc_type, genre, topic, difficulty, tags, source_type, summary')
-        .limit(5)
-      
-      if (fallbackError) {
-      return NextResponse.json({ error: 'Failed to search documents' }, { status: 500 })
+    // Generate embedding for the user's message with error handling
+    let queryEmbedding
+    try {
+      console.log('🔮 Generating embedding for user query...')
+      queryEmbedding = await generateEmbedding(message)
+      console.log('✅ Embedding generated successfully')
+    } catch (error) {
+      console.error('❌ Failed to generate embedding:', error)
+      return NextResponse.json({ 
+        error: 'Embedding generation failed',
+        response: 'I apologize, but I cannot process your query at the moment due to an AI service issue. Please try again later.',
+        sources: [],
+        documentsFound: 0
+      }, { status: 500 })
     }
 
-      console.log('Using fallback document search')
-      // Use fallback documents
-      documents = fallbackDocs
+    // Search for relevant documents using enhanced vector store
+    let documents = []
+    let searchMethod = 'none'
+    
+    try {
+      console.log('🔍 Searching for relevant documents using vector search...')
+      let { data: vectorDocs, error } = await supabase.rpc('match_documents_enhanced', {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.7,
+        match_count: 5
+      })
+
+      if (error) {
+        console.error('❌ Vector search failed:', error)
+        throw new Error(`Vector search failed: ${error.message}`)
+      }
+
+      if (vectorDocs && vectorDocs.length > 0) {
+        documents = vectorDocs
+        searchMethod = 'vector'
+        console.log(`✅ Vector search found ${documents.length} documents`)
+      } else {
+        console.log('⚠️ Vector search returned no results, trying fallback...')
+        throw new Error('No vector search results')
+      }
+    } catch (error) {
+      console.error('❌ Vector search error:', error)
+      
+      // Try fallback search if enhanced search fails
+      try {
+        console.log('🔄 Attempting fallback document search...')
+        const { data: fallbackDocs, error: fallbackError } = await supabase
+          .from('documents_enhanced')
+          .select('id, content, title, author, doc_type, genre, topic, difficulty, tags, source_type, summary')
+          .limit(5)
+        
+        if (fallbackError) {
+          console.error('❌ Fallback search also failed:', fallbackError)
+          throw fallbackError
+        }
+
+        if (fallbackDocs && fallbackDocs.length > 0) {
+          documents = fallbackDocs
+          searchMethod = 'fallback'
+          console.log(`✅ Fallback search found ${documents.length} documents`)
+        } else {
+          console.log('⚠️ No documents found in database')
+          searchMethod = 'empty'
+        }
+      } catch (fallbackError) {
+        console.error('❌ All search methods failed:', fallbackError)
+        return NextResponse.json({ 
+          error: 'Document search failed',
+          details: 'Unable to search document database. Database may be empty or misconfigured.',
+          response: 'I apologize, but I cannot access any documents in the database at the moment. Please ensure documents have been uploaded and try again.',
+          sources: [],
+          documentsFound: 0,
+          searchMethod: 'failed'
+        }, { status: 500 })
+      }
     }
 
     // Prepare context from retrieved documents with enhanced information
@@ -123,7 +189,8 @@ Based on the retrieved context above, provide a comprehensive answer that:
       response,
       sources,
       documentsFound: documents?.length || 0,
-      feedbackApplied: relevantFeedback ? relevantFeedback.length : 0
+      feedbackApplied: relevantFeedback ? relevantFeedback.length : 0,
+      searchMethod
     })
 
   } catch (error) {
