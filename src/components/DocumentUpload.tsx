@@ -105,17 +105,24 @@ export function DocumentUpload() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to preview chunks')
+        const errorText = await response.text()
+        throw new Error(`Failed to preview chunks: ${errorText}`)
       }
 
       const data = await response.json()
-      setChunkStats(data.chunkStats)
-      setShowPreview(true)
-      setUploadProgress({
-        stage: 'complete',
-        progress: 100,
-        message: 'Preview generated successfully!'
-      })
+      console.log('Preview chunks response:', data) // Debug log
+      
+      if (data.success && data.chunkStats) {
+        setChunkStats(data.chunkStats)
+        setShowPreview(true)
+        setUploadProgress({
+          stage: 'complete',
+          progress: 100,
+          message: 'Preview generated successfully!'
+        })
+      } else {
+        throw new Error('Invalid response from preview API')
+      }
     } catch (error) {
       console.error('Error previewing chunks:', error)
       setUploadProgress({
@@ -123,6 +130,9 @@ export function DocumentUpload() {
         progress: 0,
         message: 'Failed to generate preview. Please try again.'
       })
+      // Reset preview state on error
+      setShowPreview(false)
+      setChunkStats(null)
     }
   }
 
@@ -409,6 +419,19 @@ export function DocumentUpload() {
         </div>
       )}
 
+      {/* Debug Info - Remove this in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs">
+          <strong>Debug Info:</strong>
+          <div>showPreview: {showPreview.toString()}</div>
+          <div>chunkStats: {chunkStats ? 'Present' : 'Null'}</div>
+          {chunkStats && (
+            <div>chunkStats.total_chunks: {chunkStats.total_chunks}</div>
+          )}
+          <div>uploadProgress: {uploadProgress?.stage || 'None'}</div>
+        </div>
+      )}
+
       {/* Chunk Preview */}
       {showPreview && chunkStats && (
         <div className="mb-6 p-4 bg-blue-50 rounded-lg">
@@ -418,37 +441,73 @@ export function DocumentUpload() {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{chunkStats.total_chunks}</p>
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.total_chunks || 0}</p>
               <p className="text-sm text-gray-600">Total Chunks</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{chunkStats.avg_length}</p>
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.avg_length || 0}</p>
               <p className="text-sm text-gray-600">Avg Length</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{chunkStats.min_length}</p>
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.min_length || 0}</p>
               <p className="text-sm text-gray-600">Min Length</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{chunkStats.max_length}</p>
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.max_length || 0}</p>
               <p className="text-sm text-gray-600">Max Length</p>
             </div>
           </div>
           
           <div className="space-y-4">
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">First Chunk:</h4>
-              <div className="bg-white p-3 rounded border text-sm">
-                {chunkStats.first_chunk.content.substring(0, 200)}...
+            {chunkStats.first_chunk && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">First Chunk:</h4>
+                <div className="bg-white p-3 rounded border text-sm">
+                  {(chunkStats.first_chunk.content || '').substring(0, 200)}
+                  {(chunkStats.first_chunk.content || '').length > 200 && '...'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Length: {chunkStats.first_chunk.length || (chunkStats.first_chunk.content || '').length} characters
+                </p>
               </div>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Last Chunk:</h4>
-              <div className="bg-white p-3 rounded border text-sm">
-                {chunkStats.last_chunk.content.substring(0, 200)}...
+            )}
+            {chunkStats.last_chunk && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Last Chunk:</h4>
+                <div className="bg-white p-3 rounded border text-sm">
+                  {(chunkStats.last_chunk.content || '').substring(0, 200)}
+                  {(chunkStats.last_chunk.content || '').length > 200 && '...'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Length: {chunkStats.last_chunk.length || (chunkStats.last_chunk.content || '').length} characters
+                </p>
               </div>
-            </div>
+            )}
           </div>
+          
+          {/* Add expandable all chunks view */}
+          {chunkStats.all_chunks && chunkStats.all_chunks.length > 2 && (
+            <div className="mt-4">
+              <details className="bg-white rounded border">
+                <summary className="p-3 cursor-pointer text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  View All Chunks ({chunkStats.all_chunks.length} total)
+                </summary>
+                <div className="p-3 border-t max-h-60 overflow-y-auto">
+                  <div className="space-y-2">
+                    {chunkStats.all_chunks.map((chunk, index) => (
+                      <div key={index} className="text-xs">
+                        <span className="font-medium">Chunk {index + 1}:</span>
+                        <span className="text-gray-600 ml-2">
+                          {chunk.length} chars - {(chunk.content || '').substring(0, 100)}
+                          {(chunk.content || '').length > 100 && '...'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
         </div>
       )}
 
