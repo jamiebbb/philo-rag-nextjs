@@ -50,7 +50,13 @@ export async function POST(request: NextRequest) {
         const sourceInfo = `Title: ${doc.title || 'Unknown'} | Author: ${doc.author || 'Unknown'} | Type: ${doc.doc_type || 'Unknown'}`
         const metadata = doc.genre || doc.topic || doc.difficulty ? 
           ` | Genre: ${doc.genre || 'N/A'} | Topic: ${doc.topic || 'N/A'} | Difficulty: ${doc.difficulty || 'N/A'}` : ''
-        return `${sourceInfo}${metadata}\nContent: ${doc.content}`
+        
+        // Limit content length like Streamlit version to prevent huge paragraphs
+        const contentPreview = doc.content?.length > 1000 ? 
+          doc.content.substring(0, 1000) + "..." : 
+          doc.content
+        
+        return `${sourceInfo}${metadata}\nContent: ${contentPreview}`
       })
       .join('\n\n') || ''
 

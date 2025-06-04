@@ -14,6 +14,7 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const [chatId] = useState(() => uuidv4())
   const [expandedFeedback, setExpandedFeedback] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -23,6 +24,18 @@ export function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  const testSupabase = async () => {
+    try {
+      const response = await fetch('/api/test-supabase')
+      const data = await response.json()
+      setDebugInfo(data)
+      console.log('🧪 Supabase test results:', data)
+    } catch (error) {
+      console.error('🚨 Supabase test failed:', error)
+      setDebugInfo({ error: 'Test failed' })
+    }
+  }
 
   const handleFeedback = async (messageId: string, feedbackType: 'helpful' | 'not_helpful' | 'partial') => {
     const message = messages.find(m => m.id === messageId)
@@ -128,13 +141,43 @@ export function ChatInterface() {
     <div className="bg-white rounded-lg shadow-lg h-[600px] flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-          <Bot className="w-5 h-5 text-blue-500" />
-          PHILO RAG Assistant
-        </h2>
-        <p className="text-sm text-gray-600 mt-1">
-          Ask questions about your uploaded documents
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+              <Bot className="w-5 h-5 text-blue-500" />
+              PHILO RAG Assistant
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Ask questions about your uploaded documents
+            </p>
+          </div>
+          <button
+            onClick={testSupabase}
+            className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600"
+          >
+            🧪 Test DB
+          </button>
+        </div>
+        
+        {/* Debug Info Display */}
+        {debugInfo && (
+          <div className="mt-3 p-3 bg-gray-50 rounded text-xs">
+            <div className="font-medium mb-2">🧪 Database Test Results:</div>
+            <div className="space-y-1">
+              <div>Connection: {debugInfo.tests?.connection?.success ? '✅' : '❌'}</div>
+              <div>Documents: {debugInfo.tests?.documents?.count || 0} found</div>
+              <div>RPC Function: {debugInfo.tests?.rpcFunction?.success ? '✅' : '❌'}</div>
+              {debugInfo.tests?.documents?.sample?.length > 0 && (
+                <div className="mt-2">
+                  <div className="font-medium">Sample docs:</div>
+                  {debugInfo.tests.documents.sample.map((doc: any, i: number) => (
+                    <div key={i} className="ml-2">• {doc.title} ({doc.contentLength} chars)</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Messages */}
