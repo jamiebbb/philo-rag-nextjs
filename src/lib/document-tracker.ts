@@ -56,6 +56,11 @@ export async function addDocumentRecord(
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available')
+      return null
+    }
+    
     const record: DocumentRecord = {
       ...documentData,
       upload_date: new Date().toISOString(),
@@ -89,6 +94,12 @@ export async function isDuplicateFile(
 ): Promise<{ isDuplicate: boolean; existingRecord?: DocumentRecord }> {
   try {
     const client = getSupabaseClient()
+    
+    if (!client) {
+      console.error('Supabase client not available')
+      return { isDuplicate: false }
+    }
+    
     const fileHash = calculateFileHash(fileContent)
 
     const { data, error } = await client
@@ -122,6 +133,11 @@ export async function isDuplicateUrl(
 ): Promise<{ isDuplicate: boolean; existingRecord?: DocumentRecord }> {
   try {
     const client = getSupabaseClient()
+    
+    if (!client) {
+      console.error('Supabase client not available')
+      return { isDuplicate: false }
+    }
     
     let query = client
       .from('document_tracker')
@@ -158,6 +174,11 @@ export async function getAllDocuments(): Promise<DocumentRecord[]> {
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available')
+      return []
+    }
+    
     const { data, error } = await client
       .from('document_tracker')
       .select('*')
@@ -184,6 +205,11 @@ export async function searchDocuments(
 ): Promise<DocumentRecord[]> {
   try {
     const client = getSupabaseClient()
+    
+    if (!client) {
+      console.error('Supabase client not available')
+      return []
+    }
     
     let dbQuery = client
       .from('document_tracker')
@@ -235,6 +261,18 @@ export async function searchDocuments(
 export async function getDocumentStats(): Promise<DocumentStats> {
   try {
     const client = getSupabaseClient()
+    
+    if (!client) {
+      console.error('Supabase client not available')
+      return {
+        total: 0,
+        total_chunks: 0,
+        by_type: {},
+        by_difficulty: {},
+        by_source: {},
+        by_genre: {}
+      }
+    }
     
     const { data, error } = await client
       .from('document_tracker')
@@ -303,6 +341,11 @@ export async function removeDocument(documentId: string): Promise<boolean> {
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available')
+      return false
+    }
+    
     const { error } = await client
       .from('document_tracker')
       .delete()
@@ -330,6 +373,11 @@ export async function updateDocumentMetadata(
   try {
     const client = getSupabaseClient()
     
+    if (!client) {
+      console.error('Supabase client not available')
+      return false
+    }
+    
     const { error } = await client
       .from('document_tracker')
       .update(updates)
@@ -353,6 +401,11 @@ export async function updateDocumentMetadata(
 export async function syncWithEnhancedTable(): Promise<boolean> {
   try {
     const client = getSupabaseClient()
+    
+    if (!client) {
+      console.error('Supabase client not available')
+      return false
+    }
     
     // Get unique documents from enhanced table
     const { data: enhancedDocs, error: enhancedError } = await client

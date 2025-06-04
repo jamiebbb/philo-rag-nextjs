@@ -1,31 +1,38 @@
 import { createClient } from '@supabase/supabase-js'
 
 // Client-side Supabase (safe for browser)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-if (!supabaseUrl) {
+// Only throw errors if we're not in build mode
+const isBuildTime = process.env.NODE_ENV === 'production' && !process.env.VERCEL
+
+if (!supabaseUrl && !isBuildTime) {
   throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
 }
 
-if (!supabaseAnonKey) {
+if (!supabaseAnonKey && !isBuildTime) {
   throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
 }
 
 // Client-side Supabase client (for browser/React components)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
   }
-})
+}) : null
 
 // Server-side Supabase client (for API routes only)
 export const createServerSupabaseClient = () => {
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY!
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY
   
   if (!serviceKey) {
     throw new Error('Missing SUPABASE_SERVICE_KEY environment variable')
+  }
+  
+  if (!supabaseUrl) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
   }
   
   return createClient(supabaseUrl, serviceKey, {

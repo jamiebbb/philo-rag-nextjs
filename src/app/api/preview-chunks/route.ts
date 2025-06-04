@@ -32,7 +32,6 @@ export async function POST(request: NextRequest) {
     const metadata = metadataStr ? JSON.parse(metadataStr) : {}
 
     // Process files and generate preview statistics
-    const chunks: ProcessedChunk[] = []
     let totalCharacters = 0
 
     // Log file details
