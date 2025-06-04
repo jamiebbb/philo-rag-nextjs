@@ -13,6 +13,9 @@ export function DocumentUpload() {
     author: '',
     doc_type: '',
     genre: '',
+    topic: '',
+    difficulty: '',
+    tags: '',
     description: ''
   })
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
@@ -180,6 +183,9 @@ export function DocumentUpload() {
           author: '',
           doc_type: '',
           genre: '',
+          topic: '',
+          difficulty: '',
+          tags: '',
           description: ''
         })
         setChunkStats(null)
@@ -203,6 +209,9 @@ export function DocumentUpload() {
       author: '',
       doc_type: '',
       genre: '',
+      topic: '',
+      difficulty: '',
+      tags: '',
       description: ''
     })
     setChunkStats(null)
@@ -274,7 +283,7 @@ export function DocumentUpload() {
       {files.length > 0 && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
           <h3 className="font-medium text-gray-900 mb-4">Document Metadata</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Title *
@@ -343,7 +352,47 @@ export function DocumentUpload() {
                 placeholder="e.g., Philosophy, Science, Fiction"
               />
             </div>
-            <div className="md:col-span-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Topic
+              </label>
+              <input
+                type="text"
+                value={metadata.topic}
+                onChange={(e) => handleMetadataChange('topic', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., Ethics, Quantum Physics, History"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Difficulty
+              </label>
+              <select
+                value={metadata.difficulty}
+                onChange={(e) => handleMetadataChange('difficulty', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select difficulty</option>
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+                <option value="Expert">Expert</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tags
+              </label>
+              <input
+                type="text"
+                value={metadata.tags}
+                onChange={(e) => handleMetadataChange('tags', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., philosophy, education, research"
+              />
+            </div>
+            <div className="md:col-span-3">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Description
               </label>
@@ -355,7 +404,7 @@ export function DocumentUpload() {
                 rows={3}
               />
             </div>
-            <div>
+            <div className="md:col-span-3">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Text Splitter
               </label>
