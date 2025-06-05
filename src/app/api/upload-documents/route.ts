@@ -108,38 +108,11 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // Generate document ID
+        // Generate document ID prefix for all chunks
         const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2)}`
 
-        // Store document metadata
-        console.log(`💾 Storing document metadata for ${file.name}...`)
-        const { error: docError } = await supabase
-          .from('documents_enhanced')
-          .insert({
-            id: documentId,
-            title: metadata.title,
-            author: metadata.author || null,
-            doc_type: metadata.doc_type || null,
-            genre: metadata.genre || null,
-            content: text.substring(0, 1000), // Store first 1000 chars as preview
-            metadata: {
-              ...metadata,
-              filename: file.name,
-              file_size: file.size,
-              chunk_count: chunks.length,
-              parser_used: pdfResult.parserUsed,
-              parse_time: pdfResult.parseTime,
-              pdf_metadata: pdfResult.metadata
-            }
-          })
-
-        if (docError) {
-          console.error('❌ Error storing document:', docError)
-          continue
-        }
-
-        // Process and store chunks with embeddings
-        console.log(`🔮 Generating embeddings for ${chunks.length} chunks...`)
+        // Process and store chunks with embeddings directly (no separate document entry needed)
+        console.log(`🔮 Generating embeddings and storing ${chunks.length} chunks...`)
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i]
           
@@ -147,30 +120,46 @@ export async function POST(request: NextRequest) {
             // Generate embedding for the chunk
             const embedding = await generateEmbedding(chunk)
 
-            // Store chunk with embedding
+            // Store chunk with all required fields matching the documents_enhanced schema
             const { error: chunkError } = await supabase
               .from('documents_enhanced')
               .insert({
-                id: `${documentId}_chunk_${i}`,
-                title: metadata.title,
-                author: metadata.author || null,
-                doc_type: metadata.doc_type || null,
-                genre: metadata.genre || null,
                 content: chunk,
                 metadata: {
                   ...metadata,
                   chunk_index: i,
-                  parent_document: documentId,
+                  total_chunks: chunks.length,
                   filename: file.name,
-                  parser_used: pdfResult.parserUsed
+                  file_size: file.size,
+                  parser_used: pdfResult.parserUsed,
+                  parse_time: pdfResult.parseTime,
+                  pdf_metadata: pdfResult.metadata
                 },
-                embedding: embedding
+                embedding: embedding,
+                title: metadata.title,
+                author: metadata.author || null,
+                doc_type: metadata.doc_type || 'Book',
+                genre: metadata.genre || null,
+                topic: metadata.topic || null,
+                difficulty: metadata.difficulty || null,
+                tags: metadata.tags || null,
+                source_type: 'pdf_upload',
+                summary: metadata.description || null,
+                chunk_id: i + 1,
+                total_chunks: chunks.length,
+                source: file.name
               })
 
             if (chunkError) {
               console.error('❌ Error storing chunk:', chunkError)
+              console.error('❌ Chunk error details:', {
+                message: chunkError.message,
+                code: chunkError.code,
+                details: chunkError.details
+              })
             } else {
               totalChunks++
+              console.log(`✅ Stored chunk ${i + 1}/${chunks.length} for ${file.name}`)
             }
           } catch (embeddingError) {
             console.error('❌ Error generating embedding for chunk:', embeddingError)

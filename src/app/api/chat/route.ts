@@ -56,8 +56,18 @@ export async function POST(request: NextRequest) {
       console.log('🔍 Searching for relevant documents using vector search...')
       let { data: vectorDocs, error } = await supabase.rpc('match_documents_enhanced', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.7,
+        match_threshold: 0.5,
         match_count: 5
+      })
+
+      console.log('🔍 Vector search debug:', {
+        error: error?.message || 'none',
+        resultCount: vectorDocs?.length || 0,
+        firstResult: vectorDocs?.[0] ? {
+          title: vectorDocs[0].title,
+          similarity: vectorDocs[0].similarity,
+          author: vectorDocs[0].author
+        } : 'none'
       })
 
       if (error) {
@@ -69,6 +79,11 @@ export async function POST(request: NextRequest) {
         documents = vectorDocs
         searchMethod = 'vector'
         console.log(`✅ Vector search found ${documents.length} documents`)
+        console.log('📋 Retrieved documents:', documents.map((d: any) => ({
+          title: d.title,
+          author: d.author,
+          similarity: d.similarity?.toFixed(3)
+        })))
       } else {
         console.log('⚠️ Vector search returned no results, trying fallback...')
         throw new Error('No vector search results')
