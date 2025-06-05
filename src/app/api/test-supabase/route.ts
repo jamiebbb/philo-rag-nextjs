@@ -48,8 +48,8 @@ export async function GET(request: NextRequest) {
       console.log('🔗 Testing basic connection...')
       const { data: testData, error: testError } = await supabase
         .from('documents_enhanced')
-        .select('count(*)')
-        .single()
+        .select('id')
+        .limit(1)
       
       connectionTest = {
         success: !testError,
