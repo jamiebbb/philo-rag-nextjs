@@ -1,20 +1,37 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, Star, MessageSquare } from 'lucide-react'
+import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, Star, MessageSquare, Menu } from 'lucide-react'
 import { ChatMessage, DocumentSource } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { storeFeedback, storeDetailedFeedback } from '@/lib/feedback'
 import { v4 as uuidv4 } from 'uuid'
 import ReactMarkdown from 'react-markdown'
+import { useChatPersistence } from '@/hooks/useChatPersistence'
+import { ChatSidebar } from './ChatSidebar'
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Use our new persistence hook instead of basic useState
+  const {
+    messages,
+    setMessages,
+    currentSessionId,
+    sessions,
+    isLoading: persistenceLoading,
+    createNewSession,
+    loadSession,
+    deleteSession,
+    clearAllSessions,
+    exportSessions,
+    importSessions,
+  } = useChatPersistence()
+
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [chatId] = useState(() => uuidv4())
+  const [chatId] = useState(() => currentSessionId || uuidv4())
   const [expandedFeedback, setExpandedFeedback] = useState<string | null>(null)
   const [debugInfo, setDebugInfo] = useState<any>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -104,7 +121,7 @@ export function ChatInterface() {
         },
         body: JSON.stringify({ 
           message: input.trim(),
-          chatId
+          chatId: currentSessionId
         }),
       })
 
@@ -137,261 +154,277 @@ export function ChatInterface() {
     }
   }
 
-  return (
-    <div className="bg-white rounded-lg shadow-lg h-[600px] flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-              <Bot className="w-5 h-5 text-blue-500" />
-              PHILO RAG Assistant
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Ask questions about your uploaded documents
-            </p>
-          </div>
-          <button
-            onClick={testSupabase}
-            className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600"
-          >
-            🧪 Test DB
-          </button>
+  // Show loading spinner while persistence is initializing
+  if (persistenceLoading) {
+    return (
+      <div className="bg-white rounded-lg shadow-lg h-[600px] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-500" />
+          <p className="text-gray-600">Loading chat history...</p>
         </div>
-        
-        {/* Debug Info Display */}
-        {debugInfo && (
-          <div className="mt-3 p-3 bg-gray-50 rounded text-xs">
-            <div className="font-medium mb-2">🧪 Database Test Results:</div>
-            <div className="space-y-1">
-              <div>Connection: {debugInfo.tests?.connection?.success ? '✅' : '❌'}</div>
-              <div>Documents: {debugInfo.tests?.documents?.count || 0} found</div>
-              <div>RPC Function: {debugInfo.tests?.rpcFunction?.success ? '✅' : '❌'}</div>
-              {debugInfo.tests?.documents?.sample?.length > 0 && (
-                <div className="mt-2">
-                  <div className="font-medium">Sample docs:</div>
-                  {debugInfo.tests.documents.sample.map((doc: any, i: number) => (
-                    <div key={i} className="ml-2">• {doc.title} ({doc.contentLength} chars)</div>
-                  ))}
-                </div>
-              )}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {/* Chat Sidebar */}
+      <ChatSidebar
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onNewSession={createNewSession}
+        onLoadSession={loadSession}
+        onDeleteSession={deleteSession}
+        onClearAll={clearAllSessions}
+        onExport={exportSessions}
+        onImport={importSessions}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div className="bg-white rounded-lg shadow-lg h-[600px] flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Chat History"
+              >
+                <Menu className="w-5 h-5 text-gray-600" />
+              </button>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                  <Bot className="w-5 h-5 text-blue-500" />
+                  PHILO RAG Assistant
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Ask questions about your uploaded documents • {sessions.length} chat{sessions.length !== 1 ? 's' : ''} saved
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={createNewSession}
+                className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                title="Start new chat"
+              >
+                New Chat
+              </button>
+              <button
+                onClick={testSupabase}
+                className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600"
+              >
+                🧪 Test DB
+              </button>
             </div>
           </div>
-        )}
-      </div>
+          
+          {/* Debug Info Display */}
+          {debugInfo && (
+            <div className="mt-3 p-3 bg-gray-50 rounded text-xs">
+              <div className="font-medium mb-2">🧪 Database Test Results:</div>
+              <div className="space-y-1">
+                <div>Connection: {debugInfo.tests?.connection?.success ? '✅' : '❌'}</div>
+                <div>Documents: {debugInfo.tests?.documents?.count || 0} found</div>
+                <div>RPC Function: {debugInfo.tests?.rpcFunction?.success ? '✅' : '❌'}</div>
+                {debugInfo.tests?.documents?.sample?.length > 0 && (
+                  <div className="mt-2">
+                    <div className="font-medium">Sample docs:</div>
+                    {debugInfo.tests.documents.sample.map((doc: any, i: number) => (
+                      <div key={i} className="ml-2">• {doc.title} ({doc.contentLength} chars)</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-8">
-            <Bot className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium">Welcome to PHILO RAG!</p>
-            <p className="text-sm">Start by asking a question about your documents.</p>
-          </div>
-        )}
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center text-gray-500 mt-8">
+              <Bot className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium">Welcome to PHILO RAG!</p>
+              <p className="text-sm">Start by asking a question about your documents.</p>
+              <p className="text-xs mt-2 text-gray-400">
+                Your conversations will be automatically saved and can be accessed from the menu
+              </p>
+            </div>
+          )}
 
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex gap-3 ${
-              message.role === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
+          {messages.map((message) => (
             <div
-              className={`flex gap-3 max-w-[80%] ${
-                message.role === 'user' ? 'flex-row-reverse' : 'flex-row'
+              key={message.id}
+              className={`flex gap-3 ${
+                message.role === 'user' ? 'justify-end' : 'justify-start'
               }`}
             >
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  message.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-600'
+                className={`flex gap-3 max-w-[80%] ${
+                  message.role === 'user' ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
-                {message.role === 'user' ? (
-                  <User className="w-4 h-4" />
-                ) : (
-                  <Bot className="w-4 h-4" />
-                )}
-              </div>
-
-              <div className="flex-1">
-              <div
-                className={`rounded-lg p-3 ${
-                  message.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-800'
-                }`}
-              >
-                  <div className="whitespace-pre-wrap">
-                    <ReactMarkdown
-                      components={{
-                        p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
-                        strong: ({ children }) => (
-                          <strong className={`font-bold ${
-                            message.role === 'user' ? 'text-white' : 'text-gray-900'
-                          }`}>
-                            {children}
-                          </strong>
-                        ),
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
-                  </div>
-                <p
-                  className={`text-xs mt-2 ${
-                    message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    message.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 text-gray-600'
                   }`}
                 >
-                  {formatDate(message.timestamp)}
-                </p>
-
-                {/* Sources */}
-                {message.sources && message.sources.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-300">
-                    <p className="text-xs font-medium text-gray-600 mb-2">
-                      Sources:
-                    </p>
-                    <div className="space-y-2">
-                      {message.sources.map((source, index) => (
-                        <div
-                          key={index}
-                          className="bg-white rounded p-2 text-xs text-gray-700"
-                        >
-                          <div className="flex items-center gap-1 font-medium">
-                            <FileText className="w-3 h-3" />
-                            {source.title}
-                            {source.author && (
-                              <span className="text-gray-500">
-                                by {source.author}
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-1 text-gray-600 line-clamp-2">
-                            {source.content.substring(0, 100)}...
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                    </div>
+                  {message.role === 'user' ? (
+                    <User className="w-4 h-4" />
+                  ) : (
+                    <Bot className="w-4 h-4" />
                   )}
                 </div>
-
-                {/* Feedback Section */}
-                {message.role === 'assistant' && (
-                  <div className="mt-2 space-y-2">
-                    {/* Quick Feedback Buttons */}
-                    {!message.feedback && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleFeedback(message.id, 'helpful')}
-                          className="flex items-center gap-1 px-3 py-1 text-xs bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors"
-                        >
-                          <ThumbsUp className="w-3 h-3" />
-                          Helpful
-                        </button>
-                        <button
-                          onClick={() => handleFeedback(message.id, 'not_helpful')}
-                          className="flex items-center gap-1 px-3 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
-                        >
-                          <ThumbsDown className="w-3 h-3" />
-                          Not Helpful
-                        </button>
-                        <button
-                          onClick={() => handleFeedback(message.id, 'partial')}
-                          className="flex items-center gap-1 px-3 py-1 text-xs bg-yellow-100 text-yellow-700 rounded-md hover:bg-yellow-200 transition-colors"
-                        >
-                          <Star className="w-3 h-3" />
-                          Partially Helpful
-                        </button>
-                        <button
-                          onClick={() => setExpandedFeedback(expandedFeedback === message.id ? null : message.id)}
-                          className="flex items-center gap-1 px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-                        >
-                          <MessageSquare className="w-3 h-3" />
-                          Detailed Feedback
-                        </button>
-                      </div>
+                <div
+                  className={`rounded-lg p-4 ${
+                    message.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  <div className="prose prose-sm max-w-none">
+                    {message.role === 'user' ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
                     )}
+                  </div>
+                  
+                  <div className="text-xs opacity-75 mt-2">
+                    {formatDate(message.timestamp)}
+                  </div>
 
-                    {/* Feedback Status */}
-                    {message.feedback && (
-                      <div className="text-xs text-gray-500">
-                        {message.feedback.type === 'detailed' ? (
-                          <span>
-                            ⭐ Rated {message.feedback.rating}/5
-                            {message.feedback.comment && ` - "${message.feedback.comment.substring(0, 50)}${message.feedback.comment.length > 50 ? '...' : ''}"`}
-                          </span>
-                        ) : (
-                          <span>
-                            {message.feedback.type === 'helpful' && '👍 Marked as helpful'}
-                            {message.feedback.type === 'not_helpful' && '👎 Marked as not helpful'}
-                            {message.feedback.type === 'partial' && '⭐ Marked as partially helpful'}
-                          </span>
-                        )}
+                  {/* Sources for assistant messages */}
+                  {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+                    <div className="mt-3 border-t border-gray-200 pt-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="w-4 h-4" />
+                        <span className="font-medium text-sm">Sources ({message.sources.length})</span>
                       </div>
-                    )}
+                      <div className="space-y-2">
+                        {message.sources.map((source, index) => (
+                          <div key={index} className="bg-white rounded p-3 border text-sm">
+                            <div className="font-medium">{source.title}</div>
+                            <div className="text-gray-600 text-xs">
+                              {source.author} • {source.doc_type}
+                              {source.relevance_score && (
+                                <span className="ml-2">
+                                  Relevance: {(source.relevance_score * 100).toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-gray-700">{source.content}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                    {/* Expanded Feedback Form */}
-                    {expandedFeedback === message.id && (
-                      <div className="bg-gray-50 p-3 rounded-md">
+                  {/* Feedback for assistant messages */}
+                  {message.role === 'assistant' && (
+                    <div className="mt-3 border-t border-gray-200 pt-3">
+                      {message.feedback ? (
+                        <div className="text-xs text-gray-600">
+                          Feedback: {message.feedback.type === 'helpful' ? '👍 Helpful' : 
+                                   message.feedback.type === 'not_helpful' ? '👎 Not helpful' : 
+                                   message.feedback.type === 'partial' ? '⚡ Partially helpful' :
+                                   `⭐ ${message.feedback.rating}/5 - ${message.feedback.comment}`}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600">Was this helpful?</span>
+                          <button
+                            onClick={() => handleFeedback(message.id, 'helpful')}
+                            className="p-1 hover:bg-green-100 rounded"
+                            title="Helpful"
+                          >
+                            <ThumbsUp className="w-3 h-3 text-green-600" />
+                          </button>
+                          <button
+                            onClick={() => handleFeedback(message.id, 'not_helpful')}
+                            className="p-1 hover:bg-red-100 rounded"
+                            title="Not helpful"
+                          >
+                            <ThumbsDown className="w-3 h-3 text-red-600" />
+                          </button>
+                          <button
+                            onClick={() => handleFeedback(message.id, 'partial')}
+                            className="p-1 hover:bg-yellow-100 rounded"
+                            title="Partially helpful"
+                          >
+                            ⚡
+                          </button>
+                          <button
+                            onClick={() => setExpandedFeedback(message.id)}
+                            className="p-1 hover:bg-blue-100 rounded"
+                            title="Detailed feedback"
+                          >
+                            <Star className="w-3 h-3 text-blue-600" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Detailed feedback form */}
+                      {expandedFeedback === message.id && (
                         <DetailedFeedbackForm
                           onSubmit={(rating, comment) => handleDetailedFeedback(message.id, rating, comment)}
                           onCancel={() => setExpandedFeedback(null)}
                         />
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-gray-600" />
+                </div>
+                <div className="bg-gray-100 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm text-gray-600">AI is thinking...</span>
                   </div>
-                )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          )}
 
-        {isLoading && (
-          <div className="flex gap-3 justify-start">
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div className="bg-gray-100 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-gray-600">Thinking...</span>
-              </div>
-            </div>
-          </div>
-        )}
+          <div ref={messagesEndRef} />
+        </div>
 
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="p-4 border-t border-gray-200">
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question about your documents..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={isLoading}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <Send className="w-4 h-4" />
-            Send
-          </button>
-        </form>
-        <div className="mt-2 text-xs text-gray-500 text-center">
-          💡 Your feedback helps improve future responses
+        {/* Input */}
+        <div className="p-4 border-t border-gray-200">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask a question about your documents..."
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !input.trim()}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+              Send
+            </button>
+          </form>
         </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -411,20 +444,18 @@ function DetailedFeedbackForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">
-          Rating (1-5 stars)
-        </label>
+    <form onSubmit={handleSubmit} className="mt-3 p-3 bg-blue-50 rounded border">
+      <div className="mb-3">
+        <label className="block text-sm font-medium mb-2">Rating (1-5)</label>
         <div className="flex gap-1">
-          {[1, 2, 3, 4, 5].map((star) => (
+          {[1, 2, 3, 4, 5].map((value) => (
             <button
-              key={star}
+              key={value}
               type="button"
-              onClick={() => setRating(star)}
-              className={`text-lg ${
-                star <= rating ? 'text-yellow-400' : 'text-gray-300'
-              } hover:text-yellow-400 transition-colors`}
+              onClick={() => setRating(value)}
+              className={`w-6 h-6 rounded ${
+                value <= rating ? 'bg-yellow-400' : 'bg-gray-200'
+              }`}
             >
               ⭐
             </button>
@@ -432,32 +463,30 @@ function DetailedFeedbackForm({
         </div>
       </div>
       
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">
-          Comments (optional)
-        </label>
+      <div className="mb-3">
+        <label className="block text-sm font-medium mb-2">Comment</label>
         <textarea
           value={comment}
           onChange={(e) => setComment(e.target.value)}
-          placeholder="Any corrections or suggestions?"
-          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-          rows={2}
+          placeholder="What could be improved?"
+          className="w-full p-2 border rounded text-sm"
+          rows={3}
         />
       </div>
       
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-        >
-          Submit Feedback
-        </button>
+      <div className="flex gap-2 justify-end">
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
+          className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
         >
           Cancel
+        </button>
+        <button
+          type="submit"
+          className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Submit
         </button>
       </div>
     </form>
