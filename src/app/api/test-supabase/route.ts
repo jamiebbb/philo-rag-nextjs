@@ -69,16 +69,25 @@ export async function GET(request: NextRequest) {
     let documentsTest
     try {
       console.log('📋 Testing document retrieval...')
+      
+      // Get total count first
+      const { count: totalCount, error: countError } = await supabase
+        .from('documents_enhanced')
+        .select('*', { count: 'exact', head: true })
+      
+      // Get sample documents  
       const { data: allDocs, error: allError } = await supabase
         .from('documents_enhanced')
         .select('id, title, author, doc_type, content, created_at')
-        .limit(10)
+        .order('created_at', { ascending: false })
+        .limit(20) // Show more documents
       
       documentsTest = {
-        success: !allError,
-        error: allError?.message,
+        success: !allError && !countError,
+        error: allError?.message || countError?.message,
         count: allDocs?.length || 0,
-        sample: allDocs?.slice(0, 3)?.map(doc => ({
+        totalInDatabase: totalCount || 0,
+        sample: allDocs?.slice(0, 5)?.map(doc => ({
           id: doc.id,
           title: doc.title,
           author: doc.author,
@@ -92,7 +101,8 @@ export async function GET(request: NextRequest) {
       documentsTest = {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown documents error',
-        count: 0
+        count: 0,
+        totalInDatabase: 0
       }
       console.error('❌ Documents test failed:', error)
     }

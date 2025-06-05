@@ -56,8 +56,8 @@ export async function POST(request: NextRequest) {
       console.log('🔍 Searching for relevant documents using vector search...')
       let { data: vectorDocs, error } = await supabase.rpc('match_documents_enhanced', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.5,
-        match_count: 5
+        match_threshold: 0.3,
+        match_count: 8
       })
 
       console.log('🔍 Vector search debug:', {
@@ -79,11 +79,15 @@ export async function POST(request: NextRequest) {
         documents = vectorDocs
         searchMethod = 'vector'
         console.log(`✅ Vector search found ${documents.length} documents`)
-        console.log('📋 Retrieved documents:', documents.map((d: any) => ({
-          title: d.title,
-          author: d.author,
-          similarity: d.similarity?.toFixed(3)
-        })))
+        console.log('📋 ALL Retrieved documents:')
+        documents.forEach((d: any, i: number) => {
+          console.log(`   ${i+1}. ${d.title} (${d.author || 'No author'}) - Similarity: ${d.similarity?.toFixed(3)} - Type: ${d.doc_type}`)
+        })
+        
+        // Check for document diversity
+        const uniqueTitles = [...new Set(documents.map((d: any) => d.title))]
+        const uniqueAuthors = [...new Set(documents.map((d: any) => d.author).filter(Boolean))]
+        console.log(`📊 Diversity check: ${uniqueTitles.length} unique titles, ${uniqueAuthors.length} unique authors`)
       } else {
         console.log('⚠️ Vector search returned no results, trying fallback...')
         throw new Error('No vector search results')
