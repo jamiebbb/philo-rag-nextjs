@@ -3,6 +3,88 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding, generateChatCompletion } from '@/lib/openai'
 import { getRelevantFeedback } from '@/lib/feedback'
 
+// Define the retrieve tool function (mimicking Streamlit's approach)
+async function retrieveTool(query: string, supabase: any): Promise<{content: string, sources: any[]}> {
+  try {
+    console.log(`🔍 RETRIEVE TOOL called for: "${query}"`)
+    
+    // Generate embedding for the query
+    const queryEmbedding = await generateEmbedding(query)
+    
+    // Use the enhanced vector search with similarity_search behavior
+    // Match Streamlit's approach: k=5, threshold=0.0 (top K regardless of similarity)
+    let { data: vectorDocs, error } = await supabase.rpc('match_documents_enhanced', {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.0, // Like Streamlit: get top K regardless of similarity
+      match_count: 5 // Like Streamlit: k=5
+    })
+
+    if (error) {
+      console.error('❌ Vector search failed:', error)
+      return {
+        content: `Error retrieving documents: ${error.message}`,
+        sources: []
+      }
+    }
+
+    if (!vectorDocs || vectorDocs.length === 0) {
+      console.log('ℹ️ No documents found in database')
+      return {
+        content: "Found 0 relevant documents for query: '" + query + "'\n\nNo documents found. This could mean:\n1. The document hasn't been uploaded\n2. The search terms don't match the content\n3. Try different keywords or check the Vector Store tab",
+        sources: []
+      }
+    }
+
+    // Process results like Streamlit's retrieve tool
+    console.log(`✅ Found ${vectorDocs.length} documents`)
+    vectorDocs.forEach((d: any, i: number) => {
+      console.log(`   ${i+1}. ${d.title} (${d.author || 'No author'}) - Similarity: ${d.similarity?.toFixed(3)} - Type: ${d.doc_type}`)
+    })
+
+    // Format documents like Streamlit
+    const serializedParts = vectorDocs.map((doc: any, i: number) => {
+      const title = doc.title || 'Unknown Document'
+      const author = doc.author || 'Unknown Author'
+      const docType = doc.doc_type || 'Unknown Type'
+      
+      const sourceInfo = `Document ${i+1}: ${title} by ${author} (${docType})`
+      const contentPreview = doc.content?.length > 1000 ? 
+        doc.content.substring(0, 1000) + "..." : 
+        doc.content
+      
+      return `Source: ${sourceInfo}\nContent: ${contentPreview}`
+    })
+
+    const serialized = "\n\n" + "=".repeat(50) + "\n\n" + serializedParts.join("\n\n" + "=".repeat(50) + "\n\n")
+    
+    const searchSummary = `Found ${vectorDocs.length} relevant documents for query: '${query}'`
+    const finalResult = `${searchSummary}\n\n${serialized}`
+
+    const sources = vectorDocs.map((doc: any) => ({
+      title: doc.title || 'Unknown Document',
+      author: doc.author || 'Unknown Author',
+      doc_type: doc.doc_type || 'Unknown Type',
+      genre: doc.genre,
+      topic: doc.topic,
+      difficulty: doc.difficulty,
+      content: doc.content?.substring(0, 300) || '',
+      relevance_score: doc.similarity
+    }))
+
+    return {
+      content: finalResult,
+      sources: sources
+    }
+
+  } catch (error) {
+    console.error('❌ Error in retrieve tool:', error)
+    return {
+      content: `Error retrieving documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      sources: []
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { message, chatId } = await request.json()
@@ -11,9 +93,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
-    console.log('💬 Chat API called with message:', message.substring(0, 100) + '...')
+    console.log('💬 AGENTIC Chat API called with message:', message.substring(0, 100) + '...')
 
-    // Get server-side Supabase client with error handling
+    // Get server-side Supabase client
     let supabase
     try {
       supabase = createServerSupabaseClient()
@@ -22,149 +104,82 @@ export async function POST(request: NextRequest) {
       console.error('❌ Failed to create Supabase client:', error)
       return NextResponse.json({ 
         error: 'Database connection failed',
-        details: 'Unable to connect to document database. Please check configuration.',
         response: 'I apologize, but I cannot access the document database at the moment. Please try again later or contact support if the issue persists.',
         sources: [],
         documentsFound: 0
       }, { status: 500 })
     }
 
-    // Get relevant feedback for context (server-side)
+    // Get relevant feedback for context
     const relevantFeedback = await getRelevantFeedback(message.trim(), 3)
 
-    // Generate embedding for the user's message with error handling
-    let queryEmbedding
-    try {
-      console.log('🔮 Generating embedding for user query...')
-      queryEmbedding = await generateEmbedding(message)
-      console.log('✅ Embedding generated successfully')
-    } catch (error) {
-      console.error('❌ Failed to generate embedding:', error)
-      return NextResponse.json({ 
-        error: 'Embedding generation failed',
-        response: 'I apologize, but I cannot process your query at the moment due to an AI service issue. Please try again later.',
-        sources: [],
-        documentsFound: 0
-      }, { status: 500 })
-    }
-
-    // Search for relevant documents using enhanced vector store
-    let documents = []
-    let searchMethod = 'none'
+    // AGENTIC APPROACH: Let AI decide whether to retrieve documents
+    console.log('🤖 Using agentic approach - AI will decide whether to retrieve documents')
     
-    try {
-      console.log('🔍 Searching for relevant documents using vector search...')
-      let { data: vectorDocs, error } = await supabase.rpc('match_documents_enhanced', {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.3,
-        match_count: 8
-      })
+    // Step 1: Ask AI if it needs to retrieve documents
+    const decisionPrompt = `You are an AI assistant that needs to decide whether to search a document database to answer a user's question.
 
-      console.log('🔍 Vector search debug:', {
-        error: error?.message || 'none',
-        resultCount: vectorDocs?.length || 0,
-        firstResult: vectorDocs?.[0] ? {
-          title: vectorDocs[0].title,
-          similarity: vectorDocs[0].similarity,
-          author: vectorDocs[0].author
-        } : 'none'
-      })
+Analyze this user message: "${message}"
 
-      if (error) {
-        console.error('❌ Vector search failed:', error)
-        throw new Error(`Vector search failed: ${error.message}`)
-      }
+Respond with EXACTLY ONE WORD:
+- "RETRIEVE" if this question requires searching specific documents (e.g., questions about specific topics, books, research, etc.)
+- "DIRECT" if this is a greeting, general conversation, or something you can answer without needing specific documents
 
-      if (vectorDocs && vectorDocs.length > 0) {
-        documents = vectorDocs
-        searchMethod = 'vector'
-        console.log(`✅ Vector search found ${documents.length} documents`)
-        console.log('📋 ALL Retrieved documents:')
-        documents.forEach((d: any, i: number) => {
-          console.log(`   ${i+1}. ${d.title} (${d.author || 'No author'}) - Similarity: ${d.similarity?.toFixed(3)} - Type: ${d.doc_type}`)
-        })
-        
-        // Check for document diversity
-        const uniqueTitles = [...new Set(documents.map((d: any) => d.title))]
-        const uniqueAuthors = [...new Set(documents.map((d: any) => d.author).filter(Boolean))]
-        console.log(`📊 Diversity check: ${uniqueTitles.length} unique titles, ${uniqueAuthors.length} unique authors`)
-      } else {
-        console.log('⚠️ Vector search returned no results, trying fallback...')
-        throw new Error('No vector search results')
-      }
-    } catch (error) {
-      console.error('❌ Vector search error:', error)
-      
-      // Try fallback search if enhanced search fails
-      try {
-        console.log('🔄 Attempting fallback document search...')
-        const { data: fallbackDocs, error: fallbackError } = await supabase
-          .from('documents_enhanced')
-          .select('id, content, title, author, doc_type, genre, topic, difficulty, tags, source_type, summary')
-          .limit(5)
-        
-        if (fallbackError) {
-          console.error('❌ Fallback search also failed:', fallbackError)
-          throw fallbackError
-        }
+Examples:
+- "hello" → DIRECT
+- "how are you?" → DIRECT  
+- "what is philosophy?" → RETRIEVE
+- "tell me about machine learning" → RETRIEVE
+- "good morning" → DIRECT
 
-        if (fallbackDocs && fallbackDocs.length > 0) {
-          documents = fallbackDocs
-          searchMethod = 'fallback'
-          console.log(`✅ Fallback search found ${documents.length} documents`)
-        } else {
-          console.log('⚠️ No documents found in database')
-          searchMethod = 'empty'
-        }
-      } catch (fallbackError) {
-        console.error('❌ All search methods failed:', fallbackError)
-        return NextResponse.json({ 
-          error: 'Document search failed',
-          details: 'Unable to search document database. Database may be empty or misconfigured.',
-          response: 'I apologize, but I cannot access any documents in the database at the moment. Please ensure documents have been uploaded and try again.',
-          sources: [],
-          documentsFound: 0,
-          searchMethod: 'failed'
-        }, { status: 500 })
-      }
+Your response (one word only):`
+
+    const decision = await generateChatCompletion([
+      { role: 'system', content: decisionPrompt },
+      { role: 'user', content: message }
+    ])
+
+    console.log(`🤖 AI decision: "${decision.trim()}"`)
+
+    let retrieveResult = null
+    let sources: any[] = []
+    let documentsFound = 0
+    let searchMethod = 'none'
+
+    // Step 2: Based on AI decision, retrieve documents or proceed directly
+    if (decision.trim().toUpperCase().includes('RETRIEVE')) {
+      console.log('🤖 AI decided to retrieve documents')
+      retrieveResult = await retrieveTool(message, supabase)
+      sources = retrieveResult.sources
+      documentsFound = sources.length
+      searchMethod = 'agentic_retrieve'
+    } else {
+      console.log('🤖 AI decided to respond directly without retrieving documents')
+      searchMethod = 'agentic_direct'
     }
 
-    // Prepare context from retrieved documents with enhanced information
-    const context = documents
-      ?.map((doc: any) => {
-        const sourceInfo = `Title: ${doc.title || 'Unknown'} | Author: ${doc.author || 'Unknown'} | Type: ${doc.doc_type || 'Unknown'}`
-        const metadata = doc.genre || doc.topic || doc.difficulty ? 
-          ` | Genre: ${doc.genre || 'N/A'} | Topic: ${doc.topic || 'N/A'} | Difficulty: ${doc.difficulty || 'N/A'}` : ''
-        
-        // Limit content length like Streamlit version to prevent huge paragraphs
-        const contentPreview = doc.content?.length > 1000 ? 
-          doc.content.substring(0, 1000) + "..." : 
-          doc.content
-        
-        return `${sourceInfo}${metadata}\nContent: ${contentPreview}`
-      })
-      .join('\n\n') || ''
+    // Step 3: Generate final response
+    let systemPrompt
+    if (retrieveResult && documentsFound > 0) {
+      // AI decided to retrieve documents - use them in context
+      systemPrompt = `You are an expert AI assistant. You have retrieved relevant documents from the knowledge base to help answer the user's question.
 
-    // Enhanced system prompt that prioritizes retrieved context
-    let systemPrompt = `You are an expert AI assistant with access to a comprehensive document library. Your primary goal is to provide thorough, accurate answers based on the retrieved context from the documents.
+RETRIEVED CONTEXT:
+${retrieveResult.content}
 
-IMPORTANT INSTRUCTIONS:
-1. **PRIORITIZE RETRIEVED CONTEXT**: Always use information from the retrieved documents as your primary source
-2. **BE THOROUGH**: Provide comprehensive answers that fully utilize the retrieved context
-3. **CITE SOURCES**: When using information from documents, mention the source (title, author, or document type)
-4. **CONTEXT FIRST**: Only supplement with general knowledge if the retrieved context is insufficient
-5. **BE SPECIFIC**: Include specific details, examples, and explanations from the documents
-6. **ACKNOWLEDGE LIMITATIONS**: If the retrieved context doesn't fully answer the question, clearly state what information is missing
+Based on this retrieved context, provide a comprehensive answer that:
+1. Uses information from the retrieved documents as your primary source
+2. Cites specific sources when possible
+3. Provides detailed explanations and examples from the context
+4. Only supplements with general knowledge if the context is insufficient
 
-RESPONSE STRUCTURE:
-- Start with information directly from the retrieved documents
-- Provide specific details and examples from the context
-- Cite the sources of your information
-- Only add general knowledge if it enhances the context-based answer
-- If context is insufficient, clearly state what additional information would be helpful
+USER QUESTION: ${message}`
+    } else {
+      // AI decided not to retrieve - respond directly
+      systemPrompt = `You are a helpful AI assistant. The user asked: "${message}"
 
-Context from relevant documents:
-${context}`
+You determined that this question doesn't require searching the document library. Respond naturally and helpfully. If this seems like a question that might be answered by documents in a knowledge base, offer to help search for specific information.`
+    }
 
     // Add feedback context if available
     if (relevantFeedback && relevantFeedback.length > 0) {
@@ -176,44 +191,22 @@ ${context}`
       systemPrompt += feedbackContext + feedbackDetails + "\n\nPlease take these corrections into account in your response."
     }
 
-    // Add final instruction
-    systemPrompt += `
-
-Based on the retrieved context above, provide a comprehensive answer that:
-1. Thoroughly uses all relevant information from the retrieved documents
-2. Cites specific sources when possible
-3. Provides detailed explanations and examples from the context
-4. Only supplements with general knowledge if the context is insufficient
-5. Clearly indicates if more information is needed to fully answer the question`
-
-    // Generate response using OpenAI with enhanced prompt
+    // Generate final response
     const response = await generateChatCompletion([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: message }
     ])
 
-    // Format sources for the frontend with enhanced metadata
-    const sources = documents?.map((doc: any) => ({
-      title: doc.title || 'Unknown Document',
-      author: doc.author || 'Unknown Author',
-      doc_type: doc.doc_type || 'Unknown Type',
-      genre: doc.genre,
-      topic: doc.topic,
-      difficulty: doc.difficulty,
-      content: doc.content?.substring(0, 300) || '', // Increased preview length
-      relevance_score: doc.similarity
-    })) || []
-
     return NextResponse.json({
       response,
       sources,
-      documentsFound: documents?.length || 0,
+      documentsFound,
       feedbackApplied: relevantFeedback ? relevantFeedback.length : 0,
       searchMethod
     })
 
   } catch (error) {
-    console.error('Error in chat API:', error)
+    console.error('Error in agentic chat API:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
