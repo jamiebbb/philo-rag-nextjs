@@ -26,7 +26,7 @@ export function extractVideoId(url: string): string | null {
 }
 
 /**
- * Get video metadata from YouTube by scraping the page
+ * Get video metadata from YouTube using multiple methods
  */
 export async function getYouTubeMetadata(videoId: string): Promise<Partial<YouTubeVideoInfo>> {
   try {
@@ -36,30 +36,91 @@ export async function getYouTubeMetadata(videoId: string): Promise<Partial<YouTu
       youtube_channel: "Unknown Channel"
     }
     
-    // Fetch the video page to extract title and channel info
+    // Method 1: Try YouTube oEmbed API (most reliable)
+    try {
+      console.log('🎬 Trying YouTube oEmbed API...')
+      const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+      const oEmbedResponse = await fetch(oEmbedUrl)
+      
+      if (oEmbedResponse.ok) {
+        const oEmbedData = await oEmbedResponse.json()
+        console.log('✅ oEmbed data retrieved:', oEmbedData)
+        
+        if (oEmbedData.title) {
+          metadata.title = oEmbedData.title
+        }
+        if (oEmbedData.author_name) {
+          metadata.youtube_channel = oEmbedData.author_name
+        }
+        
+        console.log('✅ Successfully got metadata from oEmbed API')
+        return metadata
+      }
+    } catch (oEmbedError) {
+      console.warn('⚠️ oEmbed API failed, trying page scraping...', oEmbedError)
+    }
+    
+    // Method 2: Fallback to page scraping with better patterns
+    console.log('🎬 Trying page scraping fallback...')
     const url = `https://www.youtube.com/watch?v=${videoId}`
-    const response = await fetch(url)
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    })
     
     if (response.ok) {
       const htmlContent = await response.text()
       
-      // Extract title
-      const titleMatch = htmlContent.match(/<meta name="title" content="([^"]+)"/)
-      if (titleMatch) {
-        metadata.title = titleMatch[1]
+      // Try multiple patterns for title extraction
+      const titlePatterns = [
+        /<meta property="og:title" content="([^"]+)"/,
+        /<meta name="title" content="([^"]+)"/,
+        /<title>([^<]+) - YouTube<\/title>/,
+        /"title":{"runs":\[{"text":"([^"]+)"/,
+        /"title":"([^"]+)"/
+      ]
+      
+      for (const pattern of titlePatterns) {
+        const titleMatch = htmlContent.match(pattern)
+        if (titleMatch && titleMatch[1]) {
+          metadata.title = titleMatch[1]
+            .replace(/\\u0026/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&amp;/g, '&')
+          console.log('✅ Found title:', metadata.title)
+          break
+        }
       }
       
-      // Extract channel name
-      const channelMatch = htmlContent.match(/<link itemprop="name" content="([^"]+)"/) ||
-                          htmlContent.match(/"author":"([^"]+)"/)
-      if (channelMatch) {
-        metadata.youtube_channel = channelMatch[1]
+      // Try multiple patterns for channel extraction
+      const channelPatterns = [
+        /"author":"([^"]+)"/,
+        /"channelName":"([^"]+)"/,
+        /<link itemprop="name" content="([^"]+)"/,
+        /"ownerChannelName":"([^"]+)"/
+      ]
+      
+      for (const pattern of channelPatterns) {
+        const channelMatch = htmlContent.match(pattern)
+        if (channelMatch && channelMatch[1]) {
+          metadata.youtube_channel = channelMatch[1]
+            .replace(/\\u0026/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&amp;/g, '&')
+          console.log('✅ Found channel:', metadata.youtube_channel)
+          break
+        }
       }
     }
     
+    console.log('📊 Final metadata:', metadata)
     return metadata
+    
   } catch (error) {
-    console.error('Error fetching video metadata:', error)
+    console.error('❌ Error fetching video metadata:', error)
     return {
       video_id: videoId,
       title: `YouTube Video ${videoId}`,
@@ -258,4 +319,4 @@ export async function generateYouTubeMetadata(
 export function isValidYouTubeUrl(url: string): boolean {
   const videoId = extractVideoId(url)
   return videoId !== null && videoId.length === 11
-} 
+}

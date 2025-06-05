@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openai'
 import { addDocumentRecord } from '@/lib/document-tracker'
-import { CharacterTextSplitter } from 'langchain/text_splitter'
+import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
 import { Document } from 'langchain/document'
 
 /**
  * Step 2 of YouTube processing workflow:
  * 1. Take reviewed metadata and cleaned transcript
- * 2. Split transcript into chunks using character splitter
+ * 2. Split transcript into chunks using SEMANTIC-AWARE splitter
  * 3. Generate embeddings for each chunk
  * 4. Store in Supabase vector database
  * 5. Add to document tracker
@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     const { 
       videoMetadata,
       cleanedTranscript,
-      chunkSize = 5000,
-      chunkOverlap = 500
+      chunkSize = 2000,  // SMALLER chunks for better precision
+      chunkOverlap = 400  // Higher overlap to preserve context
     } = await request.json()
 
     if (!videoMetadata || !cleanedTranscript) {
@@ -35,17 +35,31 @@ export async function POST(request: NextRequest) {
     console.log('📝 Transcript length:', cleanedTranscript.length)
     console.log('✂️ Chunk settings:', { chunkSize, chunkOverlap })
 
-    // Create character text splitter for YouTube
-    const textSplitter = new CharacterTextSplitter({
+    // Create SEMANTIC-AWARE text splitter for better factual preservation
+    const textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize,
       chunkOverlap,
-      separator: '\n\n'
+      // Semantic separators - prioritize keeping related info together
+      separators: [
+        '\n\n',           // Paragraph breaks (highest priority)
+        '\n',             // Line breaks
+        '. ',             // Sentence endings
+        ', ',             // Clause separators
+        ' ',              // Word boundaries
+        ''                // Character level (last resort)
+      ]
     })
 
-    // Split transcript into chunks
-    console.log('✂️ Splitting transcript into chunks with character splitter...')
+    // Split transcript into semantically-aware chunks
+    console.log('✂️ Splitting transcript with SEMANTIC-AWARE splitter...')
     const chunks = await textSplitter.splitText(cleanedTranscript)
-    console.log('✂️ Created', chunks.length, 'chunks')
+    console.log('✂️ Created', chunks.length, 'chunks (semantic preservation)')
+
+    // Log chunk analysis for debugging
+    console.log('📊 Chunk size analysis:')
+    console.log('  Average length:', Math.round(chunks.reduce((a, b) => a + b.length, 0) / chunks.length))
+    console.log('  Min length:', Math.min(...chunks.map(c => c.length)))
+    console.log('  Max length:', Math.max(...chunks.map(c => c.length)))
 
     // Create Document objects with enhanced metadata
     const documents = chunks.map((chunk, index) => {
@@ -54,7 +68,12 @@ export async function POST(request: NextRequest) {
         source_type: 'youtube_video',
         chunk_id: index + 1,
         total_chunks: chunks.length,
-        source: videoMetadata.source_url
+        source: videoMetadata.source_url,
+        // Add semantic context hints
+        chunk_length: chunk.length,
+        contains_numbers: /\d+/.test(chunk),
+        contains_names: /[A-Z][a-z]+ [A-Z][a-z]+/.test(chunk),
+        contains_leadership_terms: /(ceo|cto|cfo|president|director|leader|executive|team|board)/i.test(chunk)
       }
 
       return new Document({
@@ -144,6 +163,13 @@ export async function POST(request: NextRequest) {
       author: videoMetadata.author,
       chunksAdded: docIds.length,
       trackerId,
+      chunkAnalysis: {
+        avgLength: Math.round(chunks.reduce((a, b) => a + b.length, 0) / chunks.length),
+        minLength: Math.min(...chunks.map(c => c.length)),
+        maxLength: Math.max(...chunks.map(c => c.length)),
+        totalChunks: chunks.length,
+        improvementsApplied: ['semantic-aware splitting', 'smaller chunks', 'higher overlap', 'context preservation']
+      },
       supabaseUpload: {
         documentsStored: docIds.length,
         vectorDatabase: 'documents_enhanced',
