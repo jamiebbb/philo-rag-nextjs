@@ -22,7 +22,7 @@ export function DocumentUpload() {
   const [chunkStats, setChunkStats] = useState<ChunkStats | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [splitterType, setSplitterType] = useState<'recursive' | 'character' | 'markdown' | 'html'>('recursive')
+  const [splitterType, setSplitterType] = useState<'recursive' | 'character' | 'markdown' | 'html'>('character')
   const [chunkSize, setChunkSize] = useState(5000)
   const [chunkOverlap, setChunkOverlap] = useState(500)
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
@@ -114,6 +114,7 @@ export function DocumentUpload() {
       formData.append('splitterType', splitterType)
       formData.append('chunkSize', chunkSize.toString())
       formData.append('chunkOverlap', chunkOverlap.toString())
+      formData.append('pdfParser', 'pdf-parse')
 
       const response = await fetch('/api/preview-chunks', {
         method: 'POST',
@@ -136,11 +137,13 @@ export function DocumentUpload() {
 
       const data = await response.json()
       setChunkStats(data.chunkStats)
+      setShowPreview(true)
       console.log('✅ Preview successful:', data)
     } catch (error) {
       console.error('❌ Error previewing chunks:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       setError(`Failed to preview chunks: ${errorMessage}`)
+      setShowPreview(false)
     } finally {
       setIsLoading(false)
     }
@@ -452,11 +455,11 @@ export function DocumentUpload() {
                     type="number"
                     value={chunkSize}
                     onChange={(e) => setChunkSize(Number(e.target.value))}
-                    min="100"
-                    max="5000"
+                    min="500"
+                    max="8000"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (100-5000)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (optimal: 3000-6000)</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -470,7 +473,7 @@ export function DocumentUpload() {
                     max="1000"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters overlap between chunks (0-1000)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters overlap (optimal: 200-800)</p>
                 </div>
               </div>
             )}

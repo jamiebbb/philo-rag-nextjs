@@ -26,15 +26,27 @@ interface ProcessResult {
   videoId?: string
 }
 
+interface ChunkStats {
+  total_chunks: number
+  avg_length: number
+  min_length: number
+  max_length: number
+  first_chunk?: { content: string; length: number }
+  last_chunk?: { content: string; length: number }
+  all_chunks?: Array<{ content: string; length: number; index: number }>
+}
+
 export function YouTubeUpload() {
   const [url, setUrl] = useState('')
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null)
   const [cleanedTranscript, setCleanedTranscript] = useState<string>('')
+  const [chunkStats, setChunkStats] = useState<ChunkStats | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [chunkSize, setChunkSize] = useState(400)
-  const [chunkOverlap, setChunkOverlap] = useState(200)
+  const [chunkSize, setChunkSize] = useState(5000)
+  const [chunkOverlap, setChunkOverlap] = useState(500)
   const [result, setResult] = useState<ProcessResult | null>(null)
   const [processingStep, setProcessingStep] = useState('')
 
@@ -53,6 +65,8 @@ export function YouTubeUpload() {
 
     setIsGeneratingMetadata(true)
     setResult(null)
+    setChunkStats(null)
+    setShowPreview(false)
     setProcessingStep('Fetching video metadata and transcript...')
 
     try {
@@ -84,6 +98,54 @@ export function YouTubeUpload() {
       setResult({
         success: false,
         message: 'Error generating metadata. Please check your connection and try again.'
+      })
+    } finally {
+      setIsGeneratingMetadata(false)
+      setProcessingStep('')
+    }
+  }
+
+  const previewChunks = async () => {
+    if (!videoMetadata || !cleanedTranscript) {
+      setResult({
+        success: false,
+        message: 'Please generate metadata first'
+      })
+      return
+    }
+
+    setIsGeneratingMetadata(true)
+    setChunkStats(null)
+    setProcessingStep('Generating chunk preview...')
+
+    try {
+      const response = await fetch('/api/youtube/preview-chunks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: cleanedTranscript,
+          chunkSize,
+          chunkOverlap
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setChunkStats(data.chunkStats)
+        setShowPreview(true)
+        setProcessingStep('')
+      } else {
+        setResult({
+          success: false,
+          message: data.error || 'Failed to generate chunk preview'
+        })
+      }
+    } catch (error) {
+      console.error('Error previewing chunks:', error)
+      setResult({
+        success: false,
+        message: 'Error generating chunk preview. Please try again.'
       })
     } finally {
       setIsGeneratingMetadata(false)
@@ -127,6 +189,8 @@ export function YouTubeUpload() {
           chunksAdded: data.chunksAdded,
           videoId: videoMetadata.video_id
         })
+        setShowPreview(false)
+        setChunkStats(null)
       } else {
         setResult({
           success: false,
@@ -149,6 +213,8 @@ export function YouTubeUpload() {
     setUrl('')
     setVideoMetadata(null)
     setCleanedTranscript('')
+    setChunkStats(null)
+    setShowPreview(false)
     setResult(null)
     setProcessingStep('')
   }
@@ -368,12 +434,12 @@ export function YouTubeUpload() {
                     type="number"
                     value={chunkSize}
                     onChange={(e) => setChunkSize(Number(e.target.value))}
-                    min="200"
-                    max="2000"
-                    step="50"
+                    min="1000"
+                    max="8000"
+                    step="500"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (200-2000)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters per chunk (optimal: 3000-6000)</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -384,21 +450,39 @@ export function YouTubeUpload() {
                     value={chunkOverlap}
                     onChange={(e) => setChunkOverlap(Number(e.target.value))}
                     min="0"
-                    max="300"
-                    step="25"
+                    max="1000"
+                    step="100"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Characters overlap (0-300)</p>
+                  <p className="text-xs text-gray-500 mt-1">Characters overlap (optimal: 200-800)</p>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Step 2: Upload Button */}
+          {/* Step 2: Preview Chunks Button */}
           <div className="mt-6 flex gap-3">
             <button
+              onClick={previewChunks}
+              disabled={isGeneratingMetadata || !cleanedTranscript}
+              className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isGeneratingMetadata ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Generating Preview...
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4" />
+                  Preview Chunks
+                </>
+              )}
+            </button>
+
+            <button
               onClick={uploadToSupabase}
-              disabled={isUploading}
+              disabled={isUploading || !videoMetadata || !cleanedTranscript}
               className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isUploading ? (
@@ -409,7 +493,7 @@ export function YouTubeUpload() {
               ) : (
                 <>
                   <Upload className="w-4 h-4" />
-                  ✅ Upload to Supabase
+                  Upload to Supabase
                 </>
               )}
             </button>
@@ -418,7 +502,7 @@ export function YouTubeUpload() {
               onClick={resetForm}
               className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
             >
-              Cancel
+              Reset
             </button>
           </div>
         </div>
@@ -493,6 +577,85 @@ export function YouTubeUpload() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Chunk Preview */}
+      {showPreview && chunkStats && (
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+          <h3 className="font-medium text-gray-900 mb-4 flex items-center gap-2">
+            <Eye className="w-5 h-5" />
+            Chunk Preview
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.total_chunks || 0}</p>
+              <p className="text-sm text-gray-600">Total Chunks</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.avg_length || 0}</p>
+              <p className="text-sm text-gray-600">Avg Length</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.min_length || 0}</p>
+              <p className="text-sm text-gray-600">Min Length</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-blue-600">{chunkStats.max_length || 0}</p>
+              <p className="text-sm text-gray-600">Max Length</p>
+            </div>
+          </div>
+          
+          <div className="space-y-4">
+            {chunkStats.first_chunk && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">First Chunk:</h4>
+                <div className="bg-white p-3 rounded border text-sm">
+                  {(chunkStats.first_chunk.content || '').substring(0, 300)}
+                  {(chunkStats.first_chunk.content || '').length > 300 && '...'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Length: {chunkStats.first_chunk.length} characters
+                </p>
+              </div>
+            )}
+            {chunkStats.last_chunk && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Last Chunk:</h4>
+                <div className="bg-white p-3 rounded border text-sm">
+                  {(chunkStats.last_chunk.content || '').substring(0, 300)}
+                  {(chunkStats.last_chunk.content || '').length > 300 && '...'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Length: {chunkStats.last_chunk.length} characters
+                </p>
+              </div>
+            )}
+          </div>
+          
+          {/* View All Chunks */}
+          {chunkStats.all_chunks && chunkStats.all_chunks.length > 2 && (
+            <div className="mt-4">
+              <details className="bg-white rounded border">
+                <summary className="p-3 cursor-pointer text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  View All Chunks ({chunkStats.all_chunks.length} total)
+                </summary>
+                <div className="p-3 border-t max-h-60 overflow-y-auto">
+                  <div className="space-y-2">
+                    {chunkStats.all_chunks.map((chunk, index) => (
+                      <div key={index} className="text-xs">
+                        <span className="font-medium">Chunk {index + 1}:</span>
+                        <span className="text-gray-600 ml-2">
+                          {chunk.length} chars - {(chunk.content || '').substring(0, 100)}
+                          {(chunk.content || '').length > 100 && '...'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
         </div>
       )}
     </div>

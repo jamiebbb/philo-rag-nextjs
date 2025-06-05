@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openai'
 import { addDocumentRecord } from '@/lib/document-tracker'
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
+import { CharacterTextSplitter } from 'langchain/text_splitter'
 import { Document } from 'langchain/document'
 
 /**
  * Step 2 of YouTube processing workflow:
  * 1. Take reviewed metadata and cleaned transcript
- * 2. Split transcript into chunks
+ * 2. Split transcript into chunks using character splitter
  * 3. Generate embeddings for each chunk
  * 4. Store in Supabase vector database
  * 5. Add to document tracker
@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     const { 
       videoMetadata,
       cleanedTranscript,
-      chunkSize = 400,
-      chunkOverlap = 200
+      chunkSize = 5000,
+      chunkOverlap = 500
     } = await request.json()
 
     if (!videoMetadata || !cleanedTranscript) {
@@ -35,15 +35,15 @@ export async function POST(request: NextRequest) {
     console.log('📝 Transcript length:', cleanedTranscript.length)
     console.log('✂️ Chunk settings:', { chunkSize, chunkOverlap })
 
-    // Create text splitter
-    const textSplitter = new RecursiveCharacterTextSplitter({
+    // Create character text splitter for YouTube
+    const textSplitter = new CharacterTextSplitter({
       chunkSize,
       chunkOverlap,
-      lengthFunction: (text: string) => text.length,
+      separator: '\n\n'
     })
 
     // Split transcript into chunks
-    console.log('✂️ Splitting transcript into chunks...')
+    console.log('✂️ Splitting transcript into chunks with character splitter...')
     const chunks = await textSplitter.splitText(cleanedTranscript)
     console.log('✂️ Created', chunks.length, 'chunks')
 
@@ -87,7 +87,10 @@ export async function POST(request: NextRequest) {
             difficulty: doc.metadata.difficulty,
             tags: doc.metadata.tags,
             source_type: doc.metadata.source_type,
-            summary: doc.metadata.summary
+            summary: doc.metadata.summary,
+            chunk_id: doc.metadata.chunk_id,
+            total_chunks: doc.metadata.total_chunks,
+            source: doc.metadata.source
           })
           .select('id')
           .single()
