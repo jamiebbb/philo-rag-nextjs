@@ -27,7 +27,7 @@ function getSupabaseClient() {
 }
 
 /**
- * Store user feedback in Supabase
+ * Store user feedback using API endpoint
  */
 export async function storeFeedback(
   userQuery: string,
@@ -38,43 +38,34 @@ export async function storeFeedback(
   comment?: string
 ): Promise<boolean> {
   try {
-    const client = getSupabaseClient()
-    
-    if (!client) {
-      console.error('Supabase client not available for feedback storage')
+    // Use API endpoint for both client and server environments
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'store',
+        userQuery,
+        aiResponse,
+        feedbackType,
+        chatId,
+        rating,
+        comment
+      })
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      console.log('✅ Feedback stored successfully:', feedbackType)
+      return true
+    } else {
+      console.error('❌ Failed to store feedback:', data.error)
       return false
     }
-    
-    const feedbackData: FeedbackRecord = {
-      user_query: userQuery,
-      ai_response: aiResponse,
-      feedback_type: feedbackType,
-      chat_id: chatId || 'anonymous',
-      rating,
-      comment,
-      created_at: new Date().toISOString()
-    }
-
-    // Generate embedding for the query to enable similarity search
-    try {
-      const embedding = await generateEmbedding(userQuery)
-      feedbackData.query_embedding = embedding
-    } catch (error) {
-      console.warn('Failed to generate embedding for feedback:', error)
-    }
-
-    const { error } = await client
-      .from('feedback')
-      .insert(feedbackData)
-
-    if (error) {
-      console.error('Error storing feedback:', error)
-      return false
-    }
-
-    return true
   } catch (error) {
-    console.error('Error storing feedback:', error)
+    console.error('❌ Error storing feedback:', error)
     return false
   }
 }

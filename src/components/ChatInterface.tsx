@@ -30,7 +30,6 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const [chatId] = useState(() => currentSessionId || uuidv4())
   const [expandedFeedback, setExpandedFeedback] = useState<string | null>(null)
-  const [debugInfo, setDebugInfo] = useState<any>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -42,35 +41,31 @@ export function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  const testSupabase = async () => {
-    try {
-      const response = await fetch('/api/test-supabase')
-      const data = await response.json()
-      setDebugInfo(data)
-      console.log('🧪 Supabase test results:', data)
-    } catch (error) {
-      console.error('🚨 Supabase test failed:', error)
-      setDebugInfo({ error: 'Test failed' })
-    }
-  }
-
   const testFeedback = async () => {
     console.log('🧪 Testing feedback system...')
     try {
-      // Test the feedback functions directly
-      const success = await storeFeedback(
-        'Test query about General Motors',
-        'Test response about GM leadership',
-        'helpful',
-        'test-chat-123'
-      )
-      
-      if (success) {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'test'
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
         console.log('✅ Feedback test successful!')
         alert('✅ Feedback system is working!')
       } else {
-        console.error('❌ Feedback test failed')
-        alert('❌ Feedback system failed - check console for details')
+        console.error('❌ Feedback test failed:', data.error)
+        if (data.needsSetup) {
+          alert(`❌ Feedback table needs setup!\n\nRun this SQL in Supabase:\n\nCREATE TABLE feedback (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  user_query TEXT NOT NULL,\n  ai_response TEXT NOT NULL,\n  feedback_type VARCHAR(20) NOT NULL,\n  chat_id UUID,\n  rating INTEGER,\n  comment TEXT,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n);`)
+        } else {
+          alert(`❌ Feedback system failed: ${data.error}`)
+        }
       }
     } catch (error) {
       console.error('❌ Feedback test error:', error)
@@ -238,12 +233,6 @@ export function ChatInterface() {
                 New Chat
               </button>
               <button
-                onClick={testSupabase}
-                className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600"
-              >
-                🧪 Test DB
-              </button>
-              <button
                 onClick={testFeedback}
                 className="px-3 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
               >
@@ -251,26 +240,6 @@ export function ChatInterface() {
               </button>
             </div>
           </div>
-          
-          {/* Debug Info Display */}
-          {debugInfo && (
-            <div className="mt-3 p-3 bg-gray-50 rounded text-xs">
-              <div className="font-medium mb-2">🧪 Database Test Results:</div>
-              <div className="space-y-1">
-                <div>Connection: {debugInfo.tests?.connection?.success ? '✅' : '❌'}</div>
-                <div>Documents: {debugInfo.tests?.documents?.count || 0} found</div>
-                <div>RPC Function: {debugInfo.tests?.rpcFunction?.success ? '✅' : '❌'}</div>
-                {debugInfo.tests?.documents?.sample?.length > 0 && (
-                  <div className="mt-2">
-                    <div className="font-medium">Sample docs:</div>
-                    {debugInfo.tests.documents.sample.map((doc: any, i: number) => (
-                      <div key={i} className="ml-2">• {doc.title} ({doc.contentLength} chars)</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Messages */}
