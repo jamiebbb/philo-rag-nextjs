@@ -4,12 +4,11 @@ import { useState } from 'react'
 import { DocumentUpload } from '@/components/DocumentUpload'
 import { ChatInterface } from '@/components/ChatInterface'
 import { DocumentManager } from '@/components/DocumentManager'
-import { VectorStoreStatus } from '@/components/VectorStoreStatus'
 import { YouTubeUpload } from '@/components/YouTubeUpload'
 import { DatabaseView } from '@/components/DatabaseView'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'youtube' | 'manage' | 'database' | 'status'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'youtube' | 'manage' | 'database'>('chat')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -34,7 +33,6 @@ export default function Home() {
                 { id: 'youtube', label: '🤖 Smart YouTube', icon: '🤖' },
                 { id: 'manage', label: '📚 Manage', icon: '📚' },
                 { id: 'database', label: '🗄️ Database View', icon: '🗄️' },
-                { id: 'status', label: '⚡ Status', icon: '⚡' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -59,7 +57,6 @@ export default function Home() {
           {activeTab === 'youtube' && <YouTubeUpload />}
           {activeTab === 'manage' && <DocumentManager />}
           {activeTab === 'database' && <DatabaseView />}
-          {activeTab === 'status' && <VectorStoreStatus />}
         </div>
       </div>
     </div>

@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, MessageSquare, Menu } from 'lucide-react'
+import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, MessageSquare, Menu, ChevronDown, ChevronUp } from 'lucide-react'
 import { ChatMessage, DocumentSource } from '@/types'
 import { formatDate } from '@/lib/utils'
-import { storeFeedback, storeDetailedFeedback, testFeedbackConnection } from '@/lib/feedback'
+import { storeFeedback, storeDetailedFeedback } from '@/lib/feedback'
 import { v4 as uuidv4 } from 'uuid'
 import ReactMarkdown from 'react-markdown'
 import { useChatPersistence } from '@/hooks/useChatPersistence'
@@ -30,6 +30,7 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const [chatId] = useState(() => currentSessionId || uuidv4())
   const [expandedFeedback, setExpandedFeedback] = useState<string | null>(null)
+  const [expandedSources, setExpandedSources] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -40,38 +41,6 @@ export function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  const testFeedback = async () => {
-    console.log('🧪 Testing feedback system...')
-    try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'test'
-        })
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        console.log('✅ Feedback test successful!')
-        alert('✅ Feedback system is working!')
-      } else {
-        console.error('❌ Feedback test failed:', data.error)
-        if (data.needsSetup) {
-          alert(`❌ Feedback table needs setup!\n\nRun this SQL in Supabase:\n\nCREATE TABLE feedback (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  user_query TEXT NOT NULL,\n  ai_response TEXT NOT NULL,\n  feedback_type VARCHAR(20) NOT NULL,\n  chat_id UUID,\n  rating INTEGER,\n  comment TEXT,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n);`)
-        } else {
-          alert(`❌ Feedback system failed: ${data.error}`)
-        }
-      }
-    } catch (error) {
-      console.error('❌ Feedback test error:', error)
-      alert('❌ Feedback test error - check console for details')
-    }
-  }
 
   const handleFeedback = async (messageId: string, feedbackType: 'helpful' | 'not_helpful' | 'partial') => {
     const message = messages.find(m => m.id === messageId)
@@ -177,7 +146,7 @@ export function ChatInterface() {
   // Show loading spinner while persistence is initializing
   if (persistenceLoading) {
     return (
-      <div className="bg-white rounded-lg shadow-lg h-[600px] flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-lg h-[800px] flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-500" />
           <p className="text-gray-600">Loading chat history...</p>
@@ -202,7 +171,7 @@ export function ChatInterface() {
         onClose={() => setSidebarOpen(false)}
       />
 
-      <div className="bg-white rounded-lg shadow-lg h-[600px] flex flex-col">
+      <div className="bg-white rounded-lg shadow-lg h-[800px] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -231,12 +200,6 @@ export function ChatInterface() {
                 title="Start new chat"
               >
                 New Chat
-              </button>
-              <button
-                onClick={testFeedback}
-                className="px-3 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
-              >
-                📝 Test Feedback
               </button>
             </div>
           </div>
@@ -287,93 +250,128 @@ export function ChatInterface() {
                       : 'bg-gray-100 text-gray-800'
                   }`}
                 >
-                  <div className="prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none prose-p:mb-4 prose-p:mt-0">
                     {message.role === 'user' ? (
                       <p className="whitespace-pre-wrap">{message.content}</p>
                     ) : (
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                      <ReactMarkdown 
+                        components={{
+                          p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
+                          ul: ({ children }) => <ul className="mb-4 last:mb-0 pl-6 list-disc">{children}</ul>,
+                          ol: ({ children }) => <ol className="mb-4 last:mb-0 pl-6 list-decimal">{children}</ol>,
+                          li: ({ children }) => <li className="mb-1">{children}</li>,
+                          h1: ({ children }) => <h1 className="text-lg font-bold mb-3 mt-4 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-sm font-bold mb-2 mt-2 first:mt-0">{children}</h3>,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
                     )}
                   </div>
                   
                   <div className="text-xs opacity-75 mt-2">
                     {formatDate(message.timestamp)}
                   </div>
+                </div>
+              </div>
+            </div>
+          ))}
 
-                  {/* Sources for assistant messages */}
-                  {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-                    <div className="mt-3 border-t border-gray-200 pt-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <FileText className="w-4 h-4" />
-                        <span className="font-medium text-sm">Sources ({message.sources.length})</span>
-                      </div>
-                      <div className="space-y-2">
-                        {message.sources.map((source, index) => (
-                          <div key={index} className="bg-white rounded p-3 border text-sm">
-                            <div className="font-medium">{source.title}</div>
-                            <div className="text-gray-600 text-xs">
-                              {source.author} • {source.doc_type}
-                              {source.relevance_score && (
-                                <span className="ml-2">
-                                  Relevance: {(source.relevance_score * 100).toFixed(1)}%
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-gray-700">{source.content}</div>
-                          </div>
-                        ))}
-                      </div>
+          {/* Sources as collapsible dropdown underneath the message */}
+          {messages.map((message) => (
+            message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+              <div key={`sources-${message.id}`} className="ml-11 -mt-2">
+                <div className="bg-gray-50 rounded-lg border border-gray-200">
+                  <button
+                    onClick={() => setExpandedSources(expandedSources === message.id ? null : message.id)}
+                    className="w-full flex items-center justify-between p-3 hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-gray-600" />
+                      <span className="font-medium text-sm text-gray-800">
+                        References ({message.sources.length})
+                      </span>
                     </div>
-                  )}
-
-                  {/* Feedback for assistant messages */}
-                  {message.role === 'assistant' && (
-                    <div className="mt-3 border-t border-gray-200 pt-3">
-                      {message.feedback ? (
-                        <div className="text-xs text-gray-600">
-                          Feedback: {message.feedback.type === 'helpful' ? '👍 Helpful' : 
-                                   message.feedback.type === 'not_helpful' ? '👎 Not helpful' : 
-                                   message.feedback.type === 'partial' ? '⚡ Partially helpful' :
-                                   `⭐ ${message.feedback.rating}/5 - ${message.feedback.comment}`}
+                    {expandedSources === message.id ? (
+                      <ChevronUp className="w-4 h-4 text-gray-600" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-600" />
+                    )}
+                  </button>
+                  
+                  {expandedSources === message.id && (
+                    <div className="px-3 pb-3 space-y-2">
+                      {message.sources.map((source, index) => (
+                        <div key={index} className="bg-white rounded p-3 border text-sm">
+                          <div className="font-medium text-gray-900">{source.title}</div>
+                          <div className="text-gray-600 text-xs mb-2">
+                            {source.author} • {source.doc_type}
+                            {source.relevance_score && (
+                              <span className="ml-2">
+                                Relevance: {(source.relevance_score * 100).toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-gray-700 text-xs">{source.content}</div>
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600">Was this helpful?</span>
-                          <button
-                            onClick={() => handleFeedback(message.id, 'helpful')}
-                            className="p-1 hover:bg-green-100 rounded"
-                            title="Helpful"
-                          >
-                            <ThumbsUp className="w-3 h-3 text-green-600" />
-                          </button>
-                          <button
-                            onClick={() => handleFeedback(message.id, 'not_helpful')}
-                            className="p-1 hover:bg-red-100 rounded"
-                            title="Not helpful"
-                          >
-                            <ThumbsDown className="w-3 h-3 text-red-600" />
-                          </button>
-                          <button
-                            onClick={() => setExpandedFeedback(message.id)}
-                            className="p-1 hover:bg-blue-100 rounded"
-                            title="Add detailed comment"
-                          >
-                            <MessageSquare className="w-3 h-3 text-blue-600" />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Detailed feedback form */}
-                      {expandedFeedback === message.id && (
-                        <DetailedFeedbackForm
-                          onSubmit={(rating, comment) => handleDetailedFeedback(message.id, rating, comment)}
-                          onCancel={() => setExpandedFeedback(null)}
-                        />
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
-            </div>
+            )
+          ))}
+
+          {/* Feedback for assistant messages */}
+          {messages.map((message) => (
+            message.role === 'assistant' && (
+              <div key={`feedback-${message.id}`} className="ml-11 -mt-2">
+                <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+                  {message.feedback ? (
+                    <div className="text-xs text-gray-600">
+                      Feedback: {message.feedback.type === 'helpful' ? '👍 Helpful' : 
+                               message.feedback.type === 'not_helpful' ? '👎 Not helpful' : 
+                               message.feedback.type === 'partial' ? '⚡ Partially helpful' :
+                               `⭐ ${message.feedback.rating}/5 - ${message.feedback.comment}`}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600">Was this helpful?</span>
+                      <button
+                        onClick={() => handleFeedback(message.id, 'helpful')}
+                        className="p-1 hover:bg-green-100 rounded"
+                        title="Helpful"
+                      >
+                        <ThumbsUp className="w-3 h-3 text-green-600" />
+                      </button>
+                      <button
+                        onClick={() => handleFeedback(message.id, 'not_helpful')}
+                        className="p-1 hover:bg-red-100 rounded"
+                        title="Not helpful"
+                      >
+                        <ThumbsDown className="w-3 h-3 text-red-600" />
+                      </button>
+                      <button
+                        onClick={() => setExpandedFeedback(message.id)}
+                        className="p-1 hover:bg-blue-100 rounded"
+                        title="Add detailed comment"
+                      >
+                        <MessageSquare className="w-3 h-3 text-blue-600" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Detailed feedback form */}
+                  {expandedFeedback === message.id && (
+                    <DetailedFeedbackForm
+                      onSubmit={(rating, comment) => handleDetailedFeedback(message.id, rating, comment)}
+                      onCancel={() => setExpandedFeedback(null)}
+                    />
+                  )}
+                </div>
+              </div>
+            )
           ))}
 
           {isLoading && (
@@ -403,16 +401,15 @@ export function ChatInterface() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask a question about your documents..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Send className="w-4 h-4" />
-              Send
+              <Send className="w-5 h-5" />
             </button>
           </form>
         </div>
@@ -437,51 +434,46 @@ function DetailedFeedbackForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 p-3 bg-blue-50 rounded border">
-      <div className="mb-3">
-        <label className="block text-sm font-medium mb-2">Rating (1-5)</label>
-        <div className="flex gap-1">
-          {[1, 2, 3, 4, 5].map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setRating(value)}
-              className={`w-6 h-6 rounded ${
-                value <= rating ? 'bg-yellow-400' : 'bg-gray-200'
-              }`}
-            >
-              ⭐
-            </button>
-          ))}
+    <div className="mt-3 p-3 bg-white rounded border">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Rating (1-5):</label>
+          <select 
+            value={rating} 
+            onChange={(e) => setRating(Number(e.target.value))}
+            className="w-full p-1 border border-gray-300 rounded text-xs"
+          >
+            {[1, 2, 3, 4, 5].map(num => (
+              <option key={num} value={num}>{num} Star{num !== 1 ? 's' : ''}</option>
+            ))}
+          </select>
         </div>
-      </div>
-      
-      <div className="mb-3">
-        <label className="block text-sm font-medium mb-2">Comment</label>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="What could be improved?"
-          className="w-full p-2 border rounded text-sm"
-          rows={3}
-        />
-      </div>
-      
-      <div className="flex gap-2 justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Submit
-        </button>
-      </div>
-    </form>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Comment:</label>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Tell us more about your experience..."
+            className="w-full p-2 border border-gray-300 rounded text-xs"
+            rows={2}
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            className="px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+          >
+            Submit
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
   )
 } 
