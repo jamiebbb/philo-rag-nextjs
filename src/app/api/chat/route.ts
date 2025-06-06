@@ -35,7 +35,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
     
     // Extract key terms from query for metadata search
     const searchTerms = query.toLowerCase().split(' ').filter(term => 
-      term.length > 2 && !['the', 'and', 'how', 'many', 'what', 'who', 'where', 'when', 'why', 'are', 'is', 'at', 'in', 'on', 'for', 'to', 'of'].includes(term)
+      term.length > 2 && !['the', 'and', 'how', 'many', 'what', 'who', 'where', 'when', 'why', 'are', 'is', 'at', 'in', 'on', 'for', 'to', 'of', 'from', 'give', 'show', 'find', 'get'].includes(term)
     )
     
     console.log(`📊 Extracted search terms: [${searchTerms.join(', ')}]`)
@@ -50,12 +50,64 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
       companyPatterns.push('general motors', 'gm')
     }
     
+    // Detect potential author name patterns (First Last name combinations)
+    const namePatterns = []
+    const words = query.toLowerCase().split(' ')
+    for (let i = 0; i < words.length - 1; i++) {
+      const currentWord = words[i]
+      const nextWord = words[i + 1]
+      
+      // Skip common words that aren't names
+      if (['the', 'and', 'from', 'by', 'of', 'book', 'article', 'document', 'recommendation'].includes(currentWord)) continue
+      
+      // Look for potential "First Last" name patterns
+      if (currentWord.length > 2 && nextWord.length > 2) {
+        const fullName = `${currentWord} ${nextWord}`
+        namePatterns.push(fullName)
+        
+        // Also add the individual names for fallback
+        if (!searchTerms.includes(currentWord)) searchTerms.push(currentWord)
+        if (!searchTerms.includes(nextWord)) searchTerms.push(nextWord)
+      }
+    }
+    
+    if (namePatterns.length > 0) {
+      console.log(`📊 Detected potential author names: [${namePatterns.join(', ')}]`)
+    }
+    
     if (companyPatterns.length > 0) {
       console.log(`📊 Detected company patterns: [${companyPatterns.join(', ')}]`)
       searchTerms.push(...companyPatterns)
     }
     
     let metadataDocs: any[] = []
+    
+    // First, search for full name patterns with higher priority
+    if (namePatterns.length > 0) {
+      for (const fullName of namePatterns) {
+        console.log(`🔍 Searching for author name: "${fullName}"`)
+        
+        const authorNameSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('author', `%${fullName}%`)
+          .limit(3)
+        
+        if (authorNameSearch.data && authorNameSearch.data.length > 0) {
+          const nameDocs = authorNameSearch.data.map((doc: any) => ({ 
+            ...doc, 
+            similarity: 0.95, // Higher than individual author matches
+            match_type: 'author_full_name' 
+          }))
+          
+          console.log(`📊 Found ${nameDocs.length} docs by "${fullName}":`)
+          nameDocs.forEach(doc => {
+            console.log(`   - "${doc.title}" by ${doc.author}`)
+          })
+          metadataDocs.push(...nameDocs)
+        }
+      }
+    }
     
     if (searchTerms.length > 0) {
       // Search across title, author, topic, genre, tags, doc_type columns
