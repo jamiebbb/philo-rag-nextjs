@@ -38,22 +38,71 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
       term.length > 2 && !['the', 'and', 'how', 'many', 'what', 'who', 'where', 'when', 'why', 'are', 'is', 'at', 'in', 'on', 'for', 'to', 'of'].includes(term)
     )
     
-    console.log(`📊 Searching metadata for terms: ${searchTerms.join(', ')}`)
+    console.log(`📊 Extracted search terms: [${searchTerms.join(', ')}]`)
+    console.log(`📊 Original query: "${query}"`)
+    
+    // Also try searching for common company name patterns
+    const companyPatterns = []
+    if (query.toLowerCase().includes('general motors')) {
+      companyPatterns.push('general motors', 'gm')
+    }
+    if (query.toLowerCase().includes('general') && query.toLowerCase().includes('motors')) {
+      companyPatterns.push('general motors', 'gm')
+    }
+    
+    if (companyPatterns.length > 0) {
+      console.log(`📊 Detected company patterns: [${companyPatterns.join(', ')}]`)
+      searchTerms.push(...companyPatterns)
+    }
     
     let metadataDocs: any[] = []
     
     if (searchTerms.length > 0) {
       // Search across title, author, topic, tags columns
       for (const term of searchTerms) {
-        const { data: titleDocs } = await supabase
+        console.log(`🔍 Searching for term: "${term}"`)
+        
+        // Try individual searches first to debug
+        const titleSearch = await supabase
           .from('documents_enhanced')
-          .select('*, similarity:1') // Add fake similarity for consistency
-          .or(`title.ilike.%${term}%,author.ilike.%${term}%,topic.ilike.%${term}%,tags.ilike.%${term}%`)
-          .limit(5)
+          .select('*')
+          .ilike('title', `%${term}%`)
+          .limit(2)
+          
+        const authorSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('author', `%${term}%`)
+          .limit(2)
+          
+        const topicSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('topic', `%${term}%`)
+          .limit(2)
+          
+        const tagsSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('tags', `%${term}%`)
+          .limit(2)
 
-        if (titleDocs && titleDocs.length > 0) {
-          console.log(`📊 Found ${titleDocs.length} docs with "${term}" in metadata`)
-          metadataDocs.push(...titleDocs)
+        // Combine all results
+        const termDocs = [
+          ...(titleSearch.data || []),
+          ...(authorSearch.data || []),
+          ...(topicSearch.data || []),
+          ...(tagsSearch.data || [])
+        ].map(doc => ({ ...doc, similarity: 1 })) // Add fake similarity for consistency
+
+        if (termDocs.length > 0) {
+          console.log(`📊 Found ${termDocs.length} docs with "${term}" in metadata:`)
+          termDocs.forEach(doc => {
+            console.log(`   - "${doc.title}" by ${doc.author}`)
+          })
+          metadataDocs.push(...termDocs)
+        } else {
+          console.log(`📊 No docs found with "${term}" in metadata`)
         }
       }
     }
