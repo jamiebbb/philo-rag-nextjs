@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { ChatMessage } from '@/types'
 
 interface ChatSession {
@@ -15,19 +15,14 @@ export function useChatPersistence() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load sessions from localStorage on mount
-  useEffect(() => {
-    loadSessions()
+  const createNewSession = useCallback(() => {
+    const newSessionId = `session-${Date.now()}`
+    setCurrentSessionId(newSessionId)
+    setMessages([])
+    return newSessionId
   }, [])
 
-  // Save messages to localStorage whenever they change
-  useEffect(() => {
-    if (currentSessionId && messages.length > 0) {
-      saveCurrentSession()
-    }
-  }, [messages, currentSessionId])
-
-  const loadSessions = () => {
+  const loadSessions = useCallback(() => {
     try {
       const stored = localStorage.getItem('philo-chat-sessions')
       const storedSessions: ChatSession[] = stored ? JSON.parse(stored) : []
@@ -61,9 +56,9 @@ export function useChatPersistence() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [createNewSession])
 
-  const saveCurrentSession = () => {
+  const saveCurrentSession = useCallback(() => {
     if (!currentSessionId) return
 
     const sessionTitle = generateSessionTitle(messages)
@@ -87,14 +82,30 @@ export function useChatPersistence() {
     } catch (error) {
       console.error('Failed to save chat session:', error)
     }
-  }
+  }, [currentSessionId, messages, sessions])
 
-  const createNewSession = () => {
-    const newSessionId = `session-${Date.now()}`
-    setCurrentSessionId(newSessionId)
-    setMessages([])
-    return newSessionId
-  }
+  const generateSessionTitle = useCallback((messages: ChatMessage[]): string => {
+    const firstUserMessage = messages.find(m => m.role === 'user')
+    if (firstUserMessage) {
+      // Take first 30 characters of the first user message
+      return firstUserMessage.content.length > 30 
+        ? firstUserMessage.content.substring(0, 30) + '...'
+        : firstUserMessage.content
+    }
+    return 'New Chat'
+  }, [])
+
+  // Load sessions from localStorage on mount
+  useEffect(() => {
+    loadSessions()
+  }, [loadSessions])
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (currentSessionId && messages.length > 0) {
+      saveCurrentSession()
+    }
+  }, [messages, currentSessionId, saveCurrentSession])
 
   const loadSession = (sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId)
@@ -126,16 +137,7 @@ export function useChatPersistence() {
     createNewSession()
   }
 
-  const generateSessionTitle = (messages: ChatMessage[]): string => {
-    const firstUserMessage = messages.find(m => m.role === 'user')
-    if (firstUserMessage) {
-      // Take first 30 characters of the first user message
-      return firstUserMessage.content.length > 30 
-        ? firstUserMessage.content.substring(0, 30) + '...'
-        : firstUserMessage.content
-    }
-    return 'New Chat'
-  }
+
 
   const exportSessions = () => {
     const dataStr = JSON.stringify(sessions, null, 2)

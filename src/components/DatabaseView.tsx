@@ -254,12 +254,12 @@ export function DatabaseView() {
           What You Can Query
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-700">
-          <div>• "Who is the CEO of [Company Name]?"</div>
-          <div>• "What are the main topics in [Document Title]?"</div>
-          <div>• "Tell me about [Author]'s key points"</div>
-          <div>• "How many employees does [Company] have?"</div>
-          <div>• "What did [Speaker] say about [Topic]?"</div>
-          <div>• "Compare [Document A] and [Document B]"</div>
+          <div>• &quot;Who is the CEO of [Company Name]?&quot;</div>
+          <div>• &quot;What are the main topics in [Document Title]?&quot;</div>
+          <div>• &quot;Tell me about [Author]&apos;s key points&quot;</div>
+          <div>• &quot;How many employees does [Company] have?&quot;</div>
+          <div>• &quot;What did [Speaker] say about [Topic]?&quot;</div>
+          <div>• &quot;Compare [Document A] and [Document B]&quot;</div>
         </div>
       </div>
 
