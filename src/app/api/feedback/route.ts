@@ -23,13 +23,16 @@ export async function POST(request: NextRequest) {
           }, { status: 400 })
         }
 
-        // Test insert
+        // Test insert (using Streamlit schema)
         const testFeedback = {
-          user_query: 'Test query',
-          ai_response: 'Test response',
-          feedback_type: 'helpful',
-          chat_id: 'test-chat-id',
-          created_at: new Date().toISOString()
+          query: 'Test query',
+          response: 'Test response', 
+          feedback: 'helpful',
+          user_id: 'test-user',
+          metadata: {
+            chat_id: 'test-chat-id',
+            timestamp: new Date().toISOString()
+          }
         }
 
         const { error: insertError } = await supabase
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('feedback')
           .delete()
-          .eq('chat_id', 'test-chat-id')
+          .eq('user_id', 'test-user')
 
         return NextResponse.json({
           success: true,
@@ -63,17 +66,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'store') {
-      // Store actual feedback
+      // Store actual feedback using Streamlit schema
       const { userQuery, aiResponse, feedbackType, chatId, rating, comment } = data
 
       const feedbackData = {
-        user_query: userQuery,
-        ai_response: aiResponse,
-        feedback_type: feedbackType,
-        chat_id: chatId || 'anonymous',
-        rating: rating || null,
-        comment: comment || null,
-        created_at: new Date().toISOString()
+        query: userQuery,
+        response: aiResponse,
+        feedback: feedbackType,
+        user_id: 'anonymous',
+        metadata: {
+          chat_id: chatId || 'anonymous',
+          rating: rating || null,
+          comment: comment || null,
+          timestamp: new Date().toISOString()
+        }
       }
 
       const { error } = await supabase

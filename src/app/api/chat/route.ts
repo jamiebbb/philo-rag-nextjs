@@ -58,7 +58,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
     let metadataDocs: any[] = []
     
     if (searchTerms.length > 0) {
-      // Search across title, author, topic, tags columns
+      // Search across title, author, topic, genre, tags, doc_type columns
       for (const term of searchTerms) {
         console.log(`🔍 Searching for term: "${term}"`)
         
@@ -81,10 +81,22 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
           .ilike('topic', `%${term}%`)
           .limit(2)
           
+        const genreSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('genre', `%${term}%`)
+          .limit(2)
+          
         const tagsSearch = await supabase
           .from('documents_enhanced')
           .select('*')
           .ilike('tags', `%${term}%`)
+          .limit(2)
+          
+        const docTypeSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('doc_type', `%${term}%`)
           .limit(2)
 
         // Combine all results with proper similarity scoring
@@ -92,7 +104,9 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
           ...(titleSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.95, match_type: 'title' })),
           ...(authorSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.90, match_type: 'author' })),
           ...(topicSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.85, match_type: 'topic' })),
-          ...(tagsSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.80, match_type: 'tags' }))
+          ...(genreSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.85, match_type: 'genre' })),
+          ...(tagsSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.80, match_type: 'tags' })),
+          ...(docTypeSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.75, match_type: 'doc_type' }))
         ]
 
         if (termDocs.length > 0) {
