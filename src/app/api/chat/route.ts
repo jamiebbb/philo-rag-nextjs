@@ -6,48 +6,109 @@ import { getRelevantFeedback } from '@/lib/feedback'
 // Define the retrieve tool function (mimicking Streamlit's approach)
 async function retrieveTool(query: string, supabase: any): Promise<{content: string, sources: any[]}> {
   try {
-    console.log(`🔍 RETRIEVE TOOL called for: "${query}"`)
+    console.log(`🔍 HYBRID RETRIEVAL for query: "${query}"`)
     
     // Generate embedding for the query
     const queryEmbedding = await generateEmbedding(query)
     
-    // Use the enhanced vector search with similarity_search behavior
-    // Match Streamlit's approach: k=5, threshold=0.0 (top K regardless of similarity)
-    let { data: vectorDocs, error } = await supabase.rpc('match_documents_enhanced', {
+    // HYBRID SEARCH STRATEGY:
+    // 1. Vector similarity search (using context-enhanced embeddings)
+    // 2. Direct metadata search (title, author, topic, tags columns)
+    // 3. Combine and deduplicate results
+    
+    console.log('📊 Step 1: Vector similarity search...')
+    let { data: vectorDocs, error: vectorError } = await supabase.rpc('match_documents_enhanced', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.0, // Like Streamlit: get top K regardless of similarity
-      match_count: 5 // Like Streamlit: k=5
+      match_threshold: 0.0,
+      match_count: 10 // Get more candidates for hybrid approach
     })
 
-    if (error) {
-      console.error('❌ Vector search failed:', error)
-      return {
-        content: `Error retrieving documents: ${error.message}`,
-        sources: []
+    if (vectorError) {
+      console.error('❌ Vector search failed:', vectorError)
+      vectorDocs = []
+    }
+
+    console.log(`📊 Vector search found: ${vectorDocs?.length || 0} documents`)
+
+    // Step 2: Direct metadata search for terms that might be in title/author/topic
+    console.log('📊 Step 2: Direct metadata search...')
+    
+    // Extract key terms from query for metadata search
+    const searchTerms = query.toLowerCase().split(' ').filter(term => 
+      term.length > 2 && !['the', 'and', 'how', 'many', 'what', 'who', 'where', 'when', 'why', 'are', 'is', 'at', 'in', 'on', 'for', 'to', 'of'].includes(term)
+    )
+    
+    console.log(`📊 Searching metadata for terms: ${searchTerms.join(', ')}`)
+    
+    let metadataDocs: any[] = []
+    
+    if (searchTerms.length > 0) {
+      // Search across title, author, topic, tags columns
+      for (const term of searchTerms) {
+        const { data: titleDocs } = await supabase
+          .from('documents_enhanced')
+          .select('*, similarity:1') // Add fake similarity for consistency
+          .or(`title.ilike.%${term}%,author.ilike.%${term}%,topic.ilike.%${term}%,tags.ilike.%${term}%`)
+          .limit(5)
+
+        if (titleDocs && titleDocs.length > 0) {
+          console.log(`📊 Found ${titleDocs.length} docs with "${term}" in metadata`)
+          metadataDocs.push(...titleDocs)
+        }
       }
     }
 
-    if (!vectorDocs || vectorDocs.length === 0) {
-      console.log('ℹ️ No documents found in database')
+    // Step 3: Combine and deduplicate results
+    console.log('📊 Step 3: Combining and deduplicating results...')
+    
+    const allDocs = [...(vectorDocs || []), ...metadataDocs]
+    const uniqueDocs = new Map()
+    
+    // Deduplicate by ID, keeping highest similarity score
+    allDocs.forEach(doc => {
+      const existingDoc = uniqueDocs.get(doc.id)
+      if (!existingDoc || (doc.similarity || 0) > (existingDoc.similarity || 0)) {
+                 uniqueDocs.set(doc.id, {
+           ...doc,
+           search_method: vectorDocs?.some((vd: any) => vd.id === doc.id) ? 
+             (metadataDocs.some((md: any) => md.id === doc.id) ? 'hybrid' : 'vector') : 
+             'metadata'
+         })
+      }
+    })
+
+    const finalDocs = Array.from(uniqueDocs.values())
+      .sort((a, b) => {
+        // Prioritize hybrid matches, then vector, then metadata
+        const priorityA = a.search_method === 'hybrid' ? 3 : (a.search_method === 'vector' ? 2 : 1)
+        const priorityB = b.search_method === 'hybrid' ? 3 : (b.search_method === 'vector' ? 2 : 1)
+        
+        if (priorityA !== priorityB) return priorityB - priorityA
+        return (b.similarity || 0) - (a.similarity || 0)
+      })
+      .slice(0, 5) // Take top 5 results
+
+    console.log(`📊 HYBRID SEARCH RESULTS: ${finalDocs.length} total documents`)
+    finalDocs.forEach((doc, i) => {
+      console.log(`   ${i+1}. ${doc.title} (${doc.author || 'No author'}) - Method: ${doc.search_method} - Similarity: ${doc.similarity?.toFixed(3) || 'N/A'}`)
+    })
+
+    if (finalDocs.length === 0) {
+      console.log('ℹ️ No documents found in hybrid search')
       return {
-        content: "Found 0 relevant documents for query: '" + query + "'\n\nNo documents found. This could mean:\n1. The document hasn't been uploaded\n2. The search terms don't match the content\n3. Try different keywords or check the Vector Store tab",
+        content: "Found 0 relevant documents for query: '" + query + "'\n\nNo documents found. This could mean:\n1. The document hasn't been uploaded\n2. The search terms don't match the content or metadata\n3. Try different keywords or check the Vector Store tab",
         sources: []
       }
     }
-
-    // Process results like Streamlit's retrieve tool
-    console.log(`✅ Found ${vectorDocs.length} documents`)
-    vectorDocs.forEach((d: any, i: number) => {
-      console.log(`   ${i+1}. ${d.title} (${d.author || 'No author'}) - Similarity: ${d.similarity?.toFixed(3)} - Type: ${d.doc_type}`)
-    })
 
     // Format documents like Streamlit
-    const serializedParts = vectorDocs.map((doc: any, i: number) => {
+    const serializedParts = finalDocs.map((doc: any, i: number) => {
       const title = doc.title || 'Unknown Document'
       const author = doc.author || 'Unknown Author'
       const docType = doc.doc_type || 'Unknown Type'
+      const searchMethod = doc.search_method || 'unknown'
       
-      const sourceInfo = `Document ${i+1}: ${title} by ${author} (${docType})`
+      const sourceInfo = `Document ${i+1}: ${title} by ${author} (${docType}) [Found via: ${searchMethod}]`
       const contentPreview = doc.content?.length > 1000 ? 
         doc.content.substring(0, 1000) + "..." : 
         doc.content
@@ -57,10 +118,10 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
 
     const serialized = "\n\n" + "=".repeat(50) + "\n\n" + serializedParts.join("\n\n" + "=".repeat(50) + "\n\n")
     
-    const searchSummary = `Found ${vectorDocs.length} relevant documents for query: '${query}'`
+    const searchSummary = `Found ${finalDocs.length} relevant documents for query: '${query}' using HYBRID SEARCH (vector + metadata)`
     const finalResult = `${searchSummary}\n\n${serialized}`
 
-    const sources = vectorDocs.map((doc: any) => ({
+    const sources = finalDocs.map((doc: any) => ({
       title: doc.title || 'Unknown Document',
       author: doc.author || 'Unknown Author',
       doc_type: doc.doc_type || 'Unknown Type',
@@ -68,7 +129,8 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
       topic: doc.topic,
       difficulty: doc.difficulty,
       content: doc.content?.substring(0, 300) || '',
-      relevance_score: doc.similarity
+      relevance_score: doc.similarity,
+      search_method: doc.search_method
     }))
 
     return {
@@ -77,7 +139,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
     }
 
   } catch (error) {
-    console.error('❌ Error in retrieve tool:', error)
+    console.error('❌ Error in hybrid retrieve tool:', error)
     return {
       content: `Error retrieving documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
       sources: []
