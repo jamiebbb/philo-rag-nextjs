@@ -87,13 +87,14 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, chatId } = await request.json()
+    const { message, chatId, chatHistory = [] } = await request.json()
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
     console.log('💬 AGENTIC Chat API called with message:', message.substring(0, 100) + '...')
+    console.log('📜 Chat history length:', chatHistory.length)
 
     // Get server-side Supabase client
     let supabase
@@ -113,16 +114,32 @@ export async function POST(request: NextRequest) {
     // Get relevant feedback for context
     const relevantFeedback = await getRelevantFeedback(message.trim(), 3)
 
+    // Build conversation context for better understanding
+    let conversationContext = ''
+    if (chatHistory.length > 0) {
+      console.log('🔗 Building conversation context from chat history...')
+      const recentHistory = chatHistory.slice(-6) // Last 6 messages for context
+      conversationContext = '\n\nCONVERSATION CONTEXT (for reference pronouns and follow-up questions):\n'
+      recentHistory.forEach((msg: any, index: number) => {
+        const role = msg.role === 'user' ? 'User' : 'Assistant'
+        const content = msg.content.length > 200 ? msg.content.substring(0, 200) + '...' : msg.content
+        conversationContext += `${role}: ${content}\n`
+      })
+      conversationContext += '\n'
+    }
+
     // AGENTIC APPROACH: Let AI decide whether to retrieve documents
     console.log('🤖 Using agentic approach - AI will decide whether to retrieve documents')
     
-    // Step 1: Ask AI if it needs to retrieve documents
+    // Step 1: Ask AI if it needs to retrieve documents (with conversation context)
     const decisionPrompt = `You are an AI assistant that needs to decide whether to search a document database to answer a user's question.
 
-Analyze this user message: "${message}"
+${conversationContext}
 
-Respond with EXACTLY ONE WORD:
-- "RETRIEVE" if this question requires searching specific documents (e.g., questions about specific topics, books, research, etc.)
+Current user message: "${message}"
+
+Consider both the current message AND the conversation context. Respond with EXACTLY ONE WORD:
+- "RETRIEVE" if this question requires searching specific documents (e.g., questions about specific topics, books, research, follow-up questions about previously mentioned topics)
 - "DIRECT" if this is a greeting, general conversation, or something you can answer without needing specific documents
 
 Examples:
@@ -131,6 +148,7 @@ Examples:
 - "what is philosophy?" → RETRIEVE
 - "tell me about machine learning" → RETRIEVE
 - "good morning" → DIRECT
+- "how many employees do they have?" (after discussing a company) → RETRIEVE
 
 Your response (one word only):`
 
@@ -149,36 +167,73 @@ Your response (one word only):`
     // Step 2: Based on AI decision, retrieve documents or proceed directly
     if (decision.trim().toUpperCase().includes('RETRIEVE')) {
       console.log('🤖 AI decided to retrieve documents')
-      retrieveResult = await retrieveTool(message, supabase)
+      
+      // For retrieval, combine current message with recent conversation context for better search
+      let searchQuery = message
+      if (conversationContext) {
+        // Extract key entities/topics from recent conversation for enhanced search
+        const contextualSearchPrompt = `Given this conversation context and current question, create an enhanced search query that includes relevant entities/topics from the conversation:
+
+${conversationContext}
+
+Current question: "${message}"
+
+Create a search query that combines the current question with relevant context. For example:
+- If conversation was about "General Motors" and question is "how many employees?", return: "General Motors employees"
+- If conversation was about "philosophy" and question is "tell me more", return: "philosophy"
+
+Enhanced search query:`
+
+        try {
+          const enhancedQuery = await generateChatCompletion([
+            { role: 'system', content: contextualSearchPrompt },
+            { role: 'user', content: message }
+          ])
+          
+          searchQuery = enhancedQuery.trim()
+          console.log(`🔍 Enhanced search query: "${searchQuery}"`)
+        } catch (error) {
+          console.warn('⚠️ Failed to enhance search query, using original:', error)
+        }
+      }
+      
+      retrieveResult = await retrieveTool(searchQuery, supabase)
       sources = retrieveResult.sources
       documentsFound = sources.length
-      searchMethod = 'agentic_retrieve'
+      searchMethod = 'agentic_retrieve_contextual'
     } else {
       console.log('🤖 AI decided to respond directly without retrieving documents')
       searchMethod = 'agentic_direct'
     }
 
-    // Step 3: Generate final response
+    // Step 3: Generate final response with full conversation context
     let systemPrompt
     if (retrieveResult && documentsFound > 0) {
       // AI decided to retrieve documents - use them in context
       systemPrompt = `You are an expert AI assistant. You have retrieved relevant documents from the knowledge base to help answer the user's question.
 
+${conversationContext}
+
 RETRIEVED CONTEXT:
 ${retrieveResult.content}
 
-Based on this retrieved context, provide a comprehensive answer that:
+Based on the conversation history and retrieved context, provide a comprehensive answer that:
 1. Uses information from the retrieved documents as your primary source
-2. Cites specific sources when possible
-3. Provides detailed explanations and examples from the context
-4. Only supplements with general knowledge if the context is insufficient
+2. References previous conversation context when relevant (e.g., "they" refers to previously mentioned company)
+3. Cites specific sources when possible
+4. Provides detailed explanations and examples from the context
+5. Maintains conversational continuity
 
 USER QUESTION: ${message}`
     } else {
-      // AI decided not to retrieve - respond directly
-      systemPrompt = `You are a helpful AI assistant. The user asked: "${message}"
+      // AI decided not to retrieve - respond directly with conversation context
+      systemPrompt = `You are a helpful AI assistant with memory of the current conversation.
 
-You determined that this question doesn't require searching the document library. Respond naturally and helpfully. If this seems like a question that might be answered by documents in a knowledge base, offer to help search for specific information.`
+${conversationContext}
+
+Current user message: "${message}"
+
+Respond naturally and helpfully, taking into account the conversation history. Reference previous topics when relevant (e.g., if they ask "tell me more" after discussing a topic). If this seems like a question that might be answered by documents in a knowledge base, offer to search for specific information.`
     }
 
     // Add feedback context if available
@@ -202,7 +257,8 @@ You determined that this question doesn't require searching the document library
       sources,
       documentsFound,
       feedbackApplied: relevantFeedback ? relevantFeedback.length : 0,
-      searchMethod
+      searchMethod,
+      conversationContextUsed: chatHistory.length > 0
     })
 
   } catch (error) {

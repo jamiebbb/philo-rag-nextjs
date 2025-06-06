@@ -121,7 +121,8 @@ export function ChatInterface() {
         },
         body: JSON.stringify({ 
           message: input.trim(),
-          chatId: currentSessionId
+          chatId: currentSessionId,
+          chatHistory: messages // Send conversation history for context
         }),
       })
 
