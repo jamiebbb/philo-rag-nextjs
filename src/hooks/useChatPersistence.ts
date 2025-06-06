@@ -9,6 +9,9 @@ interface ChatSession {
   updatedAt: Date
 }
 
+// Configuration for chat retention (in days)
+const CHAT_RETENTION_DAYS = 90 // Keep chats for 90 days by default
+
 export function useChatPersistence() {
   const [currentSessionId, setCurrentSessionId] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -20,6 +23,25 @@ export function useChatPersistence() {
     setCurrentSessionId(newSessionId)
     setMessages([])
     return newSessionId
+  }, [])
+
+  // Clean up old sessions based on retention policy
+  const cleanupOldSessions = useCallback((sessions: ChatSession[]): ChatSession[] => {
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - CHAT_RETENTION_DAYS)
+    
+    const filteredSessions = sessions.filter(session => {
+      const sessionDate = new Date(session.updatedAt)
+      return sessionDate > cutoffDate
+    })
+
+    // Log cleanup if any sessions were removed
+    const removedCount = sessions.length - filteredSessions.length
+    if (removedCount > 0) {
+      console.log(`🧹 Cleaned up ${removedCount} old chat session(s) (older than ${CHAT_RETENTION_DAYS} days)`)
+    }
+
+    return filteredSessions
   }, [])
 
   const loadSessions = useCallback(() => {
@@ -38,11 +60,19 @@ export function useChatPersistence() {
         }))
       }))
 
-      setSessions(parsedSessions)
+      // Clean up old sessions
+      const cleanedSessions = cleanupOldSessions(parsedSessions)
+      
+      // Update localStorage if cleanup occurred
+      if (cleanedSessions.length !== parsedSessions.length) {
+        localStorage.setItem('philo-chat-sessions', JSON.stringify(cleanedSessions))
+      }
+
+      setSessions(cleanedSessions)
 
       // Load the most recent session or create a new one
-      if (parsedSessions.length > 0) {
-        const mostRecent = parsedSessions.sort((a, b) => 
+      if (cleanedSessions.length > 0) {
+        const mostRecent = cleanedSessions.sort((a, b) => 
           b.updatedAt.getTime() - a.updatedAt.getTime()
         )[0]
         setCurrentSessionId(mostRecent.id)
@@ -56,7 +86,7 @@ export function useChatPersistence() {
     } finally {
       setIsLoading(false)
     }
-  }, [createNewSession])
+  }, [createNewSession, cleanupOldSessions])
 
   const saveCurrentSession = useCallback(() => {
     if (!currentSessionId) return
@@ -116,38 +146,51 @@ export function useChatPersistence() {
   }
 
   const deleteSession = (sessionId: string) => {
-    const updatedSessions = sessions.filter(s => s.id !== sessionId)
-    setSessions(updatedSessions)
-    
     try {
+      const updatedSessions = sessions.filter(s => s.id !== sessionId)
+      setSessions(updatedSessions)
+      
       localStorage.setItem('philo-chat-sessions', JSON.stringify(updatedSessions))
+      
+      // If we deleted the current session, create a new one
+      if (sessionId === currentSessionId) {
+        createNewSession()
+      }
+      
+      console.log(`🗑️ Deleted chat session: ${sessionId}`)
     } catch (error) {
       console.error('Failed to delete session:', error)
-    }
-
-    // If we deleted the current session, create a new one
-    if (sessionId === currentSessionId) {
-      createNewSession()
+      throw error // Re-throw to let the UI handle the error
     }
   }
 
   const clearAllSessions = () => {
-    setSessions([])
-    localStorage.removeItem('philo-chat-sessions')
-    createNewSession()
+    try {
+      setSessions([])
+      localStorage.removeItem('philo-chat-sessions')
+      createNewSession()
+      console.log('🧹 Cleared all chat sessions')
+    } catch (error) {
+      console.error('Failed to clear all sessions:', error)
+      throw error
+    }
   }
 
-
-
   const exportSessions = () => {
-    const dataStr = JSON.stringify(sessions, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(dataBlob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `philo-chat-export-${new Date().toISOString().split('T')[0]}.json`
-    link.click()
-    URL.revokeObjectURL(url)
+    try {
+      const dataStr = JSON.stringify(sessions, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(dataBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `philo-chat-export-${new Date().toISOString().split('T')[0]}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      console.log('📤 Exported chat sessions')
+    } catch (error) {
+      console.error('Failed to export sessions:', error)
+      throw error
+    }
   }
 
   const importSessions = (file: File) => {
@@ -165,14 +208,19 @@ export function useChatPersistence() {
           }))
         }))
         
-        setSessions(validatedSessions)
-        localStorage.setItem('philo-chat-sessions', JSON.stringify(validatedSessions))
+        // Clean up old sessions from imported data too
+        const cleanedSessions = cleanupOldSessions(validatedSessions)
         
-        if (validatedSessions.length > 0) {
-          const mostRecent = validatedSessions[0]
+        setSessions(cleanedSessions)
+        localStorage.setItem('philo-chat-sessions', JSON.stringify(cleanedSessions))
+        
+        if (cleanedSessions.length > 0) {
+          const mostRecent = cleanedSessions[0]
           setCurrentSessionId(mostRecent.id)
           setMessages(mostRecent.messages)
         }
+        
+        console.log(`📥 Imported ${cleanedSessions.length} chat sessions`)
       } catch (error) {
         console.error('Failed to import sessions:', error)
         alert('Failed to import chat sessions. Please check the file format.')
@@ -180,6 +228,16 @@ export function useChatPersistence() {
     }
     reader.readAsText(file)
   }
+
+  // Get retention info for display
+  const getRetentionInfo = () => ({
+    retentionDays: CHAT_RETENTION_DAYS,
+    oldestSession: sessions.length > 0 
+      ? sessions.reduce((oldest, session) => 
+          session.updatedAt < oldest.updatedAt ? session : oldest
+        ).updatedAt
+      : null
+  })
 
   return {
     // State
@@ -196,5 +254,8 @@ export function useChatPersistence() {
     clearAllSessions,
     exportSessions,
     importSessions,
+    
+    // Utility
+    getRetentionInfo,
   }
 } 

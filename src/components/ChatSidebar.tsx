@@ -10,7 +10,8 @@ import {
   Settings, 
   Clock,
   Search,
-  X
+  X,
+  EyeOff
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -92,6 +93,17 @@ export function ChatSidebar({
     }
   }
 
+  const handleDeleteSession = (sessionId: string, sessionTitle: string) => {
+    try {
+      if (confirm(`Delete chat "${sessionTitle}"?\n\nThis action cannot be undone.`)) {
+        onDeleteSession(sessionId)
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error)
+      alert('Failed to delete chat session. Please try again.')
+    }
+  }
+
   if (!isOpen) return null
 
   return (
@@ -108,12 +120,22 @@ export function ChatSidebar({
         <div className="p-4 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Chat History</h2>
-            <button
-              onClick={onClose}
-              className="lg:hidden text-gray-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-white transition-colors"
+                title="Hide chat history"
+              >
+                <EyeOff className="w-5 h-5" />
+              </button>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-white transition-colors"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
           
           {/* New Chat Button */}
@@ -186,7 +208,7 @@ export function ChatSidebar({
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          onDeleteSession(session.id)
+                          handleDeleteSession(session.id, session.title)
                         }}
                         className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600 rounded transition-all"
                         title="Delete chat"
@@ -206,6 +228,16 @@ export function ChatSidebar({
           <div className="p-4 border-t border-gray-700 bg-gray-800">
             <h3 className="text-sm font-semibold mb-3">Chat Management</h3>
             <div className="space-y-2">
+              {/* Retention Policy Info */}
+              <div className="p-3 bg-gray-700 rounded-lg mb-3">
+                <h4 className="text-xs font-semibold text-gray-300 mb-2">Data Retention</h4>
+                <p className="text-xs text-gray-400">
+                  Chat history is stored locally on your device for 90 days. 
+                  Older chats are automatically cleaned up on app startup.
+                  No data is sent to external servers except during chat interactions.
+                </p>
+              </div>
+              
               <button
                 onClick={() => {
                   onExport()
@@ -225,7 +257,7 @@ export function ChatSidebar({
               </button>
               <button
                 onClick={() => {
-                  if (confirm('This will delete all chat history. Are you sure?')) {
+                  if (confirm('This will delete ALL chat history permanently.\n\nThis action cannot be undone.\n\nAre you sure?')) {
                     onClearAll()
                     setShowSettings(false)
                   }
