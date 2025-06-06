@@ -101,7 +101,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
           }))
           
           console.log(`📊 Found ${nameDocs.length} docs by "${fullName}":`)
-          nameDocs.forEach(doc => {
+          nameDocs.forEach((doc: any) => {
             console.log(`   - "${doc.title}" by ${doc.author}`)
           })
           metadataDocs.push(...nameDocs)
@@ -163,7 +163,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
 
         if (termDocs.length > 0) {
           console.log(`📊 Found ${termDocs.length} docs with "${term}" in metadata:`)
-          termDocs.forEach(doc => {
+          termDocs.forEach((doc: any) => {
             console.log(`   - "${doc.title}" by ${doc.author}`)
           })
           metadataDocs.push(...termDocs)
@@ -180,7 +180,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
     const uniqueDocs = new Map()
     
     // Deduplicate by ID, keeping highest similarity score
-    allDocs.forEach(doc => {
+    allDocs.forEach((doc: any) => {
       const existingDoc = uniqueDocs.get(doc.id)
       if (!existingDoc || (doc.similarity || 0) > (existingDoc.similarity || 0)) {
                  uniqueDocs.set(doc.id, {
@@ -204,7 +204,7 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
       .slice(0, 5) // Take top 5 results
 
     console.log(`📊 HYBRID SEARCH RESULTS: ${finalDocs.length} total documents`)
-    finalDocs.forEach((doc, i) => {
+    finalDocs.forEach((doc: any, i: number) => {
       console.log(`   ${i+1}. ${doc.title} (${doc.author || 'No author'}) - Method: ${doc.search_method} - Similarity: ${doc.similarity?.toFixed(3) || 'N/A'}`)
     })
 

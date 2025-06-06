@@ -57,7 +57,7 @@ function calculateDatabaseStats(documents: any[]) {
   const documentsBySource: { [key: string]: number } = {}
   const documentsByAuthor: { [key: string]: number } = {}
 
-  documents.forEach(doc => {
+  documents.forEach((doc: any) => {
     const key = `${doc.title || 'Untitled'}_${doc.author || 'Unknown'}_${doc.source_type || 'unknown'}`
     
     if (!uniqueDocsMap.has(key)) {
@@ -103,7 +103,7 @@ function calculateDatabaseStats(documents: any[]) {
   const uniqueDocsBySource: { [key: string]: number } = {}
   const uniqueDocsByAuthor: { [key: string]: number } = {}
 
-  uniqueDocuments.forEach(doc => {
+  uniqueDocuments.forEach((doc: any) => {
     const type = doc.doc_type || 'Unknown'
     const source = doc.source_type || 'unknown'
     const author = doc.author || 'Unknown'
