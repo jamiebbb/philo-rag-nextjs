@@ -117,8 +117,17 @@ export async function POST(request: NextRequest) {
           const chunk = chunks[i]
           
           try {
-            // Generate embedding for the chunk
-            const embedding = await generateEmbedding(chunk)
+            // Generate CONTEXT-ENHANCED embedding that includes both content AND key metadata
+            const contextEnhancedText = `
+Company/Source: ${metadata.title || file.name}
+Author/Speaker: ${metadata.author || 'Unknown'}
+Topic: ${metadata.topic || 'General'}
+Content: ${chunk}
+            `.trim()
+            
+            console.log(`🔮 Generating context-enhanced embedding for chunk ${i + 1}/${chunks.length}...`)
+            
+            const embedding = await generateEmbedding(contextEnhancedText)
 
             // Store chunk with all required fields matching the documents_enhanced schema
             const { error: chunkError } = await supabase

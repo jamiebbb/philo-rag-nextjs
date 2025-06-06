@@ -88,8 +88,21 @@ export async function POST(request: NextRequest) {
     
     for (const doc of documents) {
       try {
-        // Generate embedding
-        const embedding = await generateEmbedding(doc.pageContent)
+        // Generate CONTEXT-ENHANCED embedding that includes both content AND key metadata
+        // This allows queries like "General Motors senior leadership" to find chunks where:
+        // - "General Motors" is in metadata (title/company)
+        // - "senior leadership" is in content
+        const contextEnhancedText = `
+Company/Source: ${doc.metadata.title || 'Unknown'}
+Author/Speaker: ${doc.metadata.author || 'Unknown'}
+Topic: ${doc.metadata.topic || 'General'}
+Content: ${doc.pageContent}
+        `.trim()
+        
+        console.log(`🔮 Generating context-enhanced embedding for chunk ${doc.metadata.chunk_id}...`)
+        console.log(`📊 Context preview: ${contextEnhancedText.substring(0, 150)}...`)
+        
+        const embedding = await generateEmbedding(contextEnhancedText)
         
         // Insert into enhanced documents table
         const { data, error } = await supabase
