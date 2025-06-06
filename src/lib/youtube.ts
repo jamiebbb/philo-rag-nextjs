@@ -130,7 +130,7 @@ export async function getYouTubeMetadata(videoId: string): Promise<Partial<YouTu
 }
 
 /**
- * Get transcript using Supadata API
+ * Get transcript using Supadata API with language preference for English
  */
 export async function getYouTubeTranscript(videoId: string): Promise<string | null> {
   try {
@@ -146,8 +146,12 @@ export async function getYouTubeTranscript(videoId: string): Promise<string | nu
     console.log('Making request to:', apiUrl)
     console.log('Video ID:', videoId)
     
+    // Try to request English transcript first
     const response = await axios.get(apiUrl, {
-      params: { videoId },
+      params: { 
+        videoId,
+        lang: 'en' // Request English language transcript if available
+      },
       headers: { 'X-API-Key': SUPADATA_API_KEY }
     })
     
@@ -159,6 +163,7 @@ export async function getYouTubeTranscript(videoId: string): Promise<string | nu
         .map((segment: any) => segment.text || '')
         .join(' ')
       console.log('Transcript extracted, length:', transcript.length)
+      console.log('First 200 chars:', transcript.substring(0, 200))
       return transcript
     }
     
@@ -172,25 +177,59 @@ export async function getYouTubeTranscript(videoId: string): Promise<string | nu
       statusText: error.response?.statusText,
       data: error.response?.data
     })
+    
+    // If English request fails, try without language parameter
+    if (error.response?.status === 400) {
+      console.log('Retrying without language parameter...')
+      try {
+        const response = await axios.get(`${SUPADATA_API_URL}${SUPADATA_TRANSCRIPT_ENDPOINT}`, {
+          params: { videoId },
+          headers: { 'X-API-Key': SUPADATA_API_KEY }
+        })
+        
+        if (response.status === 200 && response.data?.content) {
+          const transcript = response.data.content
+            .map((segment: any) => segment.text || '')
+            .join(' ')
+          console.log('Transcript extracted on retry, length:', transcript.length)
+          return transcript
+        }
+      } catch (retryError) {
+        console.error('Retry also failed:', retryError)
+      }
+    }
+    
     return null
   }
 }
 
 /**
- * Clean and format transcript using GPT-4o-mini with the exact Streamlit prompt
+ * Clean and format transcript using GPT-4o-mini with improved language handling
  */
 export async function cleanYouTubeTranscript(transcript: string): Promise<string> {
   try {
     console.log('🧹 Starting transcript cleaning with GPT-4o-mini...')
     console.log('📊 Original transcript length:', transcript.length)
+    console.log('📊 First 200 chars:', transcript.substring(0, 200))
     
-    const systemPrompt = `You are an expert in grammar corrections and textual structuring.
+    const systemPrompt = `You are an expert transcript cleaner and translator.
 
-Correct the classification of the provided text, adding commas, periods, question marks and other symbols necessary for natural and consistent reading. Do not change any words, just adjust the punctuation according to the grammatical rules and context.
+Your job is to:
+1. TRANSLATE the content to English if it's in another language
+2. Clean up grammar, punctuation, and formatting 
+3. Structure the content with clear paragraphs and sections
+4. Remove any unnecessary filler words or repetitive content
+5. DO NOT add any headers, titles, or metadata like "YouTube Transcript Cleaning" or "Translator:" information
+6. Return ONLY the cleaned content without any prefixes or headers
 
-Organize your content using markdown, structuring it with titles, subtitles, lists or other protected elements to clearly highlight the topics and information captured. Leave it in English and remember to always maintain the original formatting.
-
-Textual organization should always be a priority according to the content of the text, as well as the appropriate title, which must make sense.`
+Rules:
+- If the transcript is not in English, translate it to English first
+- Add proper punctuation (commas, periods, question marks)
+- Break content into logical paragraphs
+- Remove "um", "uh", repetitive phrases, and filler words
+- Keep the speaker's original meaning and tone
+- DO NOT add document headers, metadata, or formatting prefixes
+- Return clean, readable English content only`
 
     // Limit transcript length to fit GPT-4o-mini token limits
     const MAX_CHUNK_SIZE = 12000 // Characters, safe for GPT-4o-mini
@@ -201,12 +240,23 @@ Textual organization should always be a priority according to the content of the
       
       const response = await generateChatCompletion([
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Here is a YouTube transcript that needs cleaning and formatting:\n\n${transcript}` }
+        { role: 'user', content: `Clean and translate this YouTube transcript to English if needed. Return only the cleaned content without any headers:\n\n${transcript}` }
       ], 'gpt-4o-mini')
 
+      // Remove any headers that might have been added
+      const cleanedResponse = response
+        .replace(/^#.*YouTube.*Transcript.*$/gm, '')
+        .replace(/^\*\*Translator:\*\*.*$/gm, '')
+        .replace(/^\*\*Reviewer:\*\*.*$/gm, '')
+        .replace(/^---+$/gm, '')
+        .replace(/^\*\*Introduction\*\*$/gm, '')
+        .replace(/^# .*$/gm, '') // Remove any markdown headers
+        .trim()
+
       console.log('✅ Transcript cleaned successfully')
-      console.log('📊 Cleaned transcript length:', response.length)
-      return response
+      console.log('📊 Cleaned transcript length:', cleanedResponse.length)
+      console.log('📊 First 200 chars of cleaned:', cleanedResponse.substring(0, 200))
+      return cleanedResponse
 
     } else {
       // Split into chunks and process each
@@ -225,10 +275,20 @@ Textual organization should always be a priority according to the content of the
         
         const response = await generateChatCompletion([
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Here is a YouTube transcript chunk that needs cleaning and formatting:\n\n${chunks[i]}` }
+          { role: 'user', content: `Clean and translate this YouTube transcript chunk to English if needed. Return only the cleaned content without any headers:\n\n${chunks[i]}` }
         ], 'gpt-4o-mini')
         
-        cleanedChunks.push(response)
+        // Clean each chunk response
+        const cleanedChunk = response
+          .replace(/^#.*YouTube.*Transcript.*$/gm, '')
+          .replace(/^\*\*Translator:\*\*.*$/gm, '')
+          .replace(/^\*\*Reviewer:\*\*.*$/gm, '')
+          .replace(/^---+$/gm, '')
+          .replace(/^\*\*Introduction\*\*$/gm, '')
+          .replace(/^# .*$/gm, '') // Remove any markdown headers
+          .trim()
+        
+        cleanedChunks.push(cleanedChunk)
       }
       
       const finalCleaned = cleanedChunks.join('\n\n')

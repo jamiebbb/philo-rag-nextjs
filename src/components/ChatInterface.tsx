@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, Star, MessageSquare, Menu } from 'lucide-react'
+import { Send, Bot, User, FileText, Loader2, ThumbsUp, ThumbsDown, MessageSquare, Menu } from 'lucide-react'
 import { ChatMessage, DocumentSource } from '@/types'
 import { formatDate } from '@/lib/utils'
-import { storeFeedback, storeDetailedFeedback } from '@/lib/feedback'
+import { storeFeedback, storeDetailedFeedback, testFeedbackConnection } from '@/lib/feedback'
 import { v4 as uuidv4 } from 'uuid'
 import ReactMarkdown from 'react-markdown'
 import { useChatPersistence } from '@/hooks/useChatPersistence'
@@ -51,6 +51,30 @@ export function ChatInterface() {
     } catch (error) {
       console.error('🚨 Supabase test failed:', error)
       setDebugInfo({ error: 'Test failed' })
+    }
+  }
+
+  const testFeedback = async () => {
+    console.log('🧪 Testing feedback system...')
+    try {
+      // Test the feedback functions directly
+      const success = await storeFeedback(
+        'Test query about General Motors',
+        'Test response about GM leadership',
+        'helpful',
+        'test-chat-123'
+      )
+      
+      if (success) {
+        console.log('✅ Feedback test successful!')
+        alert('✅ Feedback system is working!')
+      } else {
+        console.error('❌ Feedback test failed')
+        alert('❌ Feedback system failed - check console for details')
+      }
+    } catch (error) {
+      console.error('❌ Feedback test error:', error)
+      alert('❌ Feedback test error - check console for details')
     }
   }
 
@@ -219,6 +243,12 @@ export function ChatInterface() {
               >
                 🧪 Test DB
               </button>
+              <button
+                onClick={testFeedback}
+                className="px-3 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
+              >
+                📝 Test Feedback
+              </button>
             </div>
           </div>
           
@@ -354,18 +384,11 @@ export function ChatInterface() {
                             <ThumbsDown className="w-3 h-3 text-red-600" />
                           </button>
                           <button
-                            onClick={() => handleFeedback(message.id, 'partial')}
-                            className="p-1 hover:bg-yellow-100 rounded"
-                            title="Partially helpful"
-                          >
-                            ⚡
-                          </button>
-                          <button
                             onClick={() => setExpandedFeedback(message.id)}
                             className="p-1 hover:bg-blue-100 rounded"
-                            title="Detailed feedback"
+                            title="Add detailed comment"
                           >
-                            <Star className="w-3 h-3 text-blue-600" />
+                            <MessageSquare className="w-3 h-3 text-blue-600" />
                           </button>
                         </div>
                       )}
