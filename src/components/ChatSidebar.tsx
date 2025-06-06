@@ -10,8 +10,7 @@ import {
   Settings, 
   Clock,
   Search,
-  X,
-  EyeOff
+  X
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -120,22 +119,13 @@ export function ChatSidebar({
         <div className="p-4 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Chat History</h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-white transition-colors"
-                title="Hide chat history"
-              >
-                <EyeOff className="w-5 h-5" />
-              </button>
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-white transition-colors"
-                title="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
           
           {/* New Chat Button */}

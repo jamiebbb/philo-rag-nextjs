@@ -273,105 +273,101 @@ export function ChatInterface() {
                   <div className="text-xs opacity-75 mt-2">
                     {formatDate(message.timestamp)}
                   </div>
+
+                  {/* Sources as collapsible dropdown underneath this specific message */}
+                  {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+                    <div className="mt-3 border-t border-gray-200 pt-3">
+                      <div className="bg-gray-50 rounded-lg border border-gray-200">
+                        <button
+                          onClick={() => setExpandedSources(expandedSources === message.id ? null : message.id)}
+                          className="w-full flex items-center justify-between p-3 hover:bg-gray-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-gray-600" />
+                            <span className="font-medium text-sm text-gray-800">
+                              References ({message.sources.length})
+                            </span>
+                          </div>
+                          {expandedSources === message.id ? (
+                            <ChevronUp className="w-4 h-4 text-gray-600" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-gray-600" />
+                          )}
+                        </button>
+                        
+                        {expandedSources === message.id && (
+                          <div className="px-3 pb-3 space-y-2">
+                            {message.sources.map((source, index) => (
+                              <div key={index} className="bg-white rounded p-3 border text-sm">
+                                <div className="font-medium text-gray-900">{source.title}</div>
+                                <div className="text-gray-600 text-xs mb-2">
+                                  {source.author} • {source.doc_type}
+                                  {source.relevance_score && (
+                                    <span className="ml-2">
+                                      Relevance: {(source.relevance_score * 100).toFixed(1)}%
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-gray-700 text-xs">{source.content}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback for this specific assistant message */}
+                  {message.role === 'assistant' && (
+                    <div className="mt-3 border-t border-gray-200 pt-3">
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+                        {message.feedback ? (
+                          <div className="text-xs text-gray-600">
+                            Feedback: {message.feedback.type === 'helpful' ? '👍 Helpful' : 
+                                     message.feedback.type === 'not_helpful' ? '👎 Not helpful' : 
+                                     message.feedback.type === 'partial' ? '⚡ Partially helpful' :
+                                     `⭐ ${message.feedback.rating}/5 - ${message.feedback.comment}`}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600">Was this helpful?</span>
+                            <button
+                              onClick={() => handleFeedback(message.id, 'helpful')}
+                              className="p-1 hover:bg-green-100 rounded"
+                              title="Helpful"
+                            >
+                              <ThumbsUp className="w-3 h-3 text-green-600" />
+                            </button>
+                            <button
+                              onClick={() => handleFeedback(message.id, 'not_helpful')}
+                              className="p-1 hover:bg-red-100 rounded"
+                              title="Not helpful"
+                            >
+                              <ThumbsDown className="w-3 h-3 text-red-600" />
+                            </button>
+                            <button
+                              onClick={() => setExpandedFeedback(message.id)}
+                              className="p-1 hover:bg-blue-100 rounded"
+                              title="Add detailed comment"
+                            >
+                              <MessageSquare className="w-3 h-3 text-blue-600" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Detailed feedback form */}
+                        {expandedFeedback === message.id && (
+                          <DetailedFeedbackForm
+                            onSubmit={(rating, comment) => handleDetailedFeedback(message.id, rating, comment)}
+                            onCancel={() => setExpandedFeedback(null)}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          ))}
-
-          {/* Sources as collapsible dropdown underneath the message */}
-          {messages.map((message) => (
-            message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-              <div key={`sources-${message.id}`} className="ml-11 -mt-2">
-                <div className="bg-gray-50 rounded-lg border border-gray-200">
-                  <button
-                    onClick={() => setExpandedSources(expandedSources === message.id ? null : message.id)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-gray-600" />
-                      <span className="font-medium text-sm text-gray-800">
-                        References ({message.sources.length})
-                      </span>
-                    </div>
-                    {expandedSources === message.id ? (
-                      <ChevronUp className="w-4 h-4 text-gray-600" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-gray-600" />
-                    )}
-                  </button>
-                  
-                  {expandedSources === message.id && (
-                    <div className="px-3 pb-3 space-y-2">
-                      {message.sources.map((source, index) => (
-                        <div key={index} className="bg-white rounded p-3 border text-sm">
-                          <div className="font-medium text-gray-900">{source.title}</div>
-                          <div className="text-gray-600 text-xs mb-2">
-                            {source.author} • {source.doc_type}
-                            {source.relevance_score && (
-                              <span className="ml-2">
-                                Relevance: {(source.relevance_score * 100).toFixed(1)}%
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-gray-700 text-xs">{source.content}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          ))}
-
-          {/* Feedback for assistant messages */}
-          {messages.map((message) => (
-            message.role === 'assistant' && (
-              <div key={`feedback-${message.id}`} className="ml-11 -mt-2">
-                <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
-                  {message.feedback ? (
-                    <div className="text-xs text-gray-600">
-                      Feedback: {message.feedback.type === 'helpful' ? '👍 Helpful' : 
-                               message.feedback.type === 'not_helpful' ? '👎 Not helpful' : 
-                               message.feedback.type === 'partial' ? '⚡ Partially helpful' :
-                               `⭐ ${message.feedback.rating}/5 - ${message.feedback.comment}`}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-600">Was this helpful?</span>
-                      <button
-                        onClick={() => handleFeedback(message.id, 'helpful')}
-                        className="p-1 hover:bg-green-100 rounded"
-                        title="Helpful"
-                      >
-                        <ThumbsUp className="w-3 h-3 text-green-600" />
-                      </button>
-                      <button
-                        onClick={() => handleFeedback(message.id, 'not_helpful')}
-                        className="p-1 hover:bg-red-100 rounded"
-                        title="Not helpful"
-                      >
-                        <ThumbsDown className="w-3 h-3 text-red-600" />
-                      </button>
-                      <button
-                        onClick={() => setExpandedFeedback(message.id)}
-                        className="p-1 hover:bg-blue-100 rounded"
-                        title="Add detailed comment"
-                      >
-                        <MessageSquare className="w-3 h-3 text-blue-600" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Detailed feedback form */}
-                  {expandedFeedback === message.id && (
-                    <DetailedFeedbackForm
-                      onSubmit={(rating, comment) => handleDetailedFeedback(message.id, rating, comment)}
-                      onCancel={() => setExpandedFeedback(null)}
-                    />
-                  )}
-                </div>
-              </div>
-            )
           ))}
 
           {isLoading && (

@@ -29,8 +29,8 @@ export default function Home() {
             <div className="flex space-x-1 overflow-x-auto">
               {[
                 { id: 'chat', label: '💬 Chat', icon: '💬' },
-                { id: 'upload', label: '📄 Upload', icon: '📄' },
-                { id: 'youtube', label: '🤖 Smart YouTube', icon: '🤖' },
+                { id: 'upload', label: '📄 PDF Upload', icon: '📄' },
+                { id: 'youtube', label: '🤖 YouTube Upload', icon: '🤖' },
                 { id: 'manage', label: '📚 Manage', icon: '📚' },
                 { id: 'database', label: '🗄️ Database View', icon: '🗄️' },
               ].map((tab) => (
