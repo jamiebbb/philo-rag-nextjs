@@ -68,41 +68,67 @@ export async function POST(request: NextRequest) {
     // Simple query analysis - no complex processing
     const queryLower = message.toLowerCase()
     
-    // Detect catalog requests
+    // Detect catalog requests AND content type filters
     const isCatalogRequest = 
       /\b(all|every|complete|catalog|inventory|outline|list|show)\s+(books?|documents?)\b/i.test(message) ||
       /\b(what\s+books|which\s+books|how\s+many\s+books)\b/i.test(message) ||
       /\b\d+\s+books?\b/i.test(message)
 
+    // Detect content type preferences
+    const wantsOnlyBooks = /\b(books?|documents?)\b/i.test(message) && !/\b(videos?|talks?|presentations?)\b/i.test(message)
+    const wantsOnlyVideos = /\b(videos?|talks?|presentations?)\b/i.test(message) && !/\b(books?|documents?)\b/i.test(message)
+
     let relevantBooks = []
     let searchMethod = ''
 
     if (isCatalogRequest) {
-      // For catalog requests, return all books
+      // For catalog requests, apply content type filtering
       relevantBooks = allBooks
-      searchMethod = 'complete_catalog'
-      console.log(`📋 Catalog request detected - showing all ${relevantBooks.length} books`)
       
-    } else {
-      // For specific queries, do simple text matching
-      const searchTerms = queryLower.split(/\s+/).filter((term: string) => term.length > 2)
-      console.log('🔍 Search terms:', searchTerms)
-      
-      relevantBooks = allBooks.filter(book => {
-        const bookText = `${book.title} ${book.author} ${book.genre} ${book.topic} ${book.content_chunks.join(' ')}`.toLowerCase()
-        return searchTerms.some((term: string) => bookText.includes(term))
-      })
-      
-      searchMethod = 'text_search'
-      console.log(`🎯 Found ${relevantBooks.length} books matching search terms`)
-      
-      // If no matches, show all books anyway
-      if (relevantBooks.length === 0) {
-        relevantBooks = allBooks
-        searchMethod = 'fallback_catalog'
-        console.log('📋 No matches found - showing all books as fallback')
+      if (wantsOnlyBooks) {
+        relevantBooks = allBooks.filter(book => book.doc_type !== 'Video')
+        searchMethod = 'books_only_catalog'
+        console.log(`📚 Books-only catalog request - showing ${relevantBooks.length} books (filtered out videos)`)
+      } else if (wantsOnlyVideos) {
+        relevantBooks = allBooks.filter(book => book.doc_type === 'Video')
+        searchMethod = 'videos_only_catalog'
+        console.log(`🎥 Videos-only catalog request - showing ${relevantBooks.length} videos`)
+      } else {
+        searchMethod = 'complete_catalog'
+        console.log(`📋 Complete catalog request - showing all ${relevantBooks.length} items`)
       }
-    }
+      
+          } else {
+        // For specific queries, do simple text matching with content type filtering
+        const searchTerms = queryLower.split(/\s+/).filter((term: string) => term.length > 2)
+        console.log('🔍 Search terms:', searchTerms)
+        
+        let searchPool = allBooks
+        
+        // Apply content type filtering to search pool
+        if (wantsOnlyBooks) {
+          searchPool = allBooks.filter(book => book.doc_type !== 'Video')
+          console.log(`📚 Searching only books - pool size: ${searchPool.length}`)
+        } else if (wantsOnlyVideos) {
+          searchPool = allBooks.filter(book => book.doc_type === 'Video')
+          console.log(`🎥 Searching only videos - pool size: ${searchPool.length}`)
+        }
+        
+        relevantBooks = searchPool.filter(book => {
+          const bookText = `${book.title} ${book.author} ${book.genre} ${book.topic} ${book.content_chunks.join(' ')}`.toLowerCase()
+          return searchTerms.some((term: string) => bookText.includes(term))
+        })
+        
+        searchMethod = wantsOnlyBooks ? 'books_text_search' : wantsOnlyVideos ? 'videos_text_search' : 'text_search'
+        console.log(`🎯 Found ${relevantBooks.length} items matching search terms`)
+        
+        // If no matches, show filtered catalog as fallback
+        if (relevantBooks.length === 0) {
+          relevantBooks = searchPool
+          searchMethod = wantsOnlyBooks ? 'books_fallback' : wantsOnlyVideos ? 'videos_fallback' : 'fallback_catalog'
+          console.log(`📋 No matches found - showing all ${searchPool.length} items as fallback`)
+        }
+      }
 
     // Limit results for better UX
     const maxResults = isCatalogRequest ? 25 : 10
