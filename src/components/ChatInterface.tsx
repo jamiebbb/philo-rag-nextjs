@@ -102,7 +102,7 @@ export function ChatInterface() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/chat-comprehensive', {
+      const response = await fetch('/api/chat-simple', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
