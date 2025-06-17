@@ -19,6 +19,53 @@ interface QueryClassification {
   pageRequested?: number
 }
 
+// Enhanced message with conversation context for better classification
+function enhanceMessageWithContext(message: string, chatHistory: any[] = []): string {
+  const queryLower = message.toLowerCase()
+  
+  // Handle context-dependent queries
+  if (/\b(another\s+one|more|next|continue|similar|like\s+that|give\s+me\s+another)\b/i.test(message)) {
+    // Look for the most recent system response for context
+    for (let i = chatHistory.length - 1; i >= 0; i--) {
+      const historyItem = chatHistory[i]
+      if (historyItem.role === 'assistant' && historyItem.content) {
+        const content = historyItem.content.toLowerCase()
+        
+        // If the previous response mentioned books, assume they want another book
+        if (content.includes('book') || content.includes('author') || content.includes('investment') || content.includes('recommend')) {
+          return `${message} (referring to: recommend another book similar to the previous recommendation)`
+        }
+        
+        // If previous response was about a topic, they likely want more on that topic
+        const topicMatch = content.match(/\b(value investing|dividend|growth|analysis|strategy|portfolio)\b/i)
+        if (topicMatch) {
+          return `${message} (referring to: more information about ${topicMatch[0]})`
+        }
+        
+        break // Only check the most recent assistant response
+      }
+    }
+    
+    // Default enhancement for contextual requests
+    return `${message} (contextual request - provide another recommendation or continue from previous topic)`
+  }
+  
+  // For other vague requests, add context if available
+  if (/\b(that|this|it)\b/i.test(message) && chatHistory.length > 0) {
+    const lastAssistantMsg = chatHistory.slice().reverse().find(item => item.role === 'assistant')
+    if (lastAssistantMsg?.content) {
+      // Extract key topic from previous response
+      const content = lastAssistantMsg.content
+      const topicMatch = content.match(/(?:about|regarding|on)\s+([^.,!?]+)/i)
+      if (topicMatch) {
+        return `${message} (referring to: ${topicMatch[1].trim()})`
+      }
+    }
+  }
+  
+  return message
+}
+
 async function classifyQuery(message: string): Promise<QueryClassification> {
   const queryLower = message.toLowerCase()
   
@@ -48,13 +95,14 @@ async function classifyQuery(message: string): Promise<QueryClassification> {
     }
   }
 
-  // Recommendation patterns
+  // Recommendation patterns (including context-dependent "another" requests)
   if (/\b(recommend|suggest|best|top|should\s+i\s+read|what\s+to\s+read|beginner|starter)/i.test(message) ||
-      /\b(good|great)\s+(books?|resources?)\s+(for|about)/i.test(message)) {
+      /\b(good|great)\s+(books?|resources?)\s+(for|about)/i.test(message) ||
+      /\b(another\s+one|give\s+me\s+another|more\s+like|similar)\b/i.test(message)) {
     return {
       type: 'recommendation',
       confidence: 0.90,
-      reasoning: 'User asking for recommendations or suggestions',
+      reasoning: 'User asking for recommendations or suggestions (including contextual "another" requests)',
       contentFilter
     }
   }
@@ -380,11 +428,14 @@ GENERAL KNOWLEDGE: You also have access to general knowledge about business, fin
 
 User Request: ${message}
 
+IMPORTANT: If the user's request seems to reference previous conversation (e.g., "give me another one", "similar", etc.), treat this as a request for additional recommendations in the same category or topic area. Look for patterns that suggest they want more content similar to what was previously discussed.
+
 Provide recommendations that:
 1. First highlight relevant items from the available content above
 2. Then provide additional general recommendations if helpful
 3. Explain why each recommendation is valuable
 4. Consider the user's apparent level/interests
+5. If this appears to be a follow-up request, acknowledge the context and provide different/additional recommendations
 
 Be specific about which recommendations come from the knowledge base vs general knowledge.`
 
@@ -459,52 +510,60 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerSupabaseClient()
 
-    // Classify the query
-    const classification = await classifyQuery(message)
+    // Enhanced message with conversation context for better classification
+    const enhancedMessage = enhanceMessageWithContext(message, chatHistory)
+    
+    // Classify the query (using enhanced message for better context understanding)
+    const classification = await classifyQuery(enhancedMessage)
+    
+    console.log('🔍 Original Query:', message)
+    console.log('🔍 Enhanced Query:', enhancedMessage)
     console.log('🎯 Query classified as:', classification)
 
     let result
     let response
 
-    // Route to appropriate handler
+    // Route to appropriate handler (use enhanced message for better context)
+    const queryToUse = enhancedMessage !== message ? enhancedMessage : message
+    
     switch (classification.type) {
       case 'catalog_browse':
-        result = await handleCatalogBrowse(message, classification, supabase)
+        result = await handleCatalogBrowse(queryToUse, classification, supabase)
         response = await generateChatCompletion([
-          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nProvide a clear, organized response based on the content above.` },
-          { role: 'user', content: message }
+          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nProvide a clear, organized response based on the content above. The user originally asked: "${message}"` },
+          { role: 'user', content: queryToUse }
         ])
         break
 
       case 'specific_search':
-        result = await handleSpecificSearch(message, classification, supabase)
+        result = await handleSpecificSearch(queryToUse, classification, supabase)
         response = await generateChatCompletion([
-          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nAnswer the user's question based on the search results above.` },
-          { role: 'user', content: message }
+          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nAnswer the user's question based on the search results above. The user originally asked: "${message}"` },
+          { role: 'user', content: queryToUse }
         ])
         break
 
       case 'direct_question':
-        result = await handleDirectQuestion(message)
+        result = await handleDirectQuestion(queryToUse)
         response = result.directResponse
         break
 
       case 'recommendation':
-        result = await handleRecommendation(message, classification, supabase)
+        result = await handleRecommendation(queryToUse, classification, supabase)
         response = result.directResponse
         break
 
       case 'hybrid':
-        result = await handleHybridQuery(message, classification, supabase)
+        result = await handleHybridQuery(queryToUse, classification, supabase)
         response = result.directResponse
         break
 
       default:
         // Fallback to simple search
-        result = await handleSpecificSearch(message, classification, supabase)
+        result = await handleSpecificSearch(queryToUse, classification, supabase)
         response = await generateChatCompletion([
-          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nAnswer based on the available information.` },
-          { role: 'user', content: message }
+          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nAnswer based on the available information. The user originally asked: "${message}"` },
+          { role: 'user', content: queryToUse }
         ])
     }
 
