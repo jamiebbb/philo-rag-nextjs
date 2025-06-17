@@ -11,126 +11,150 @@ async function comprehensiveRetrieve(query: string, supabase: any): Promise<{
   retrievalMethod: string
   warning?: string
 }> {
-  console.log(`🔍 Comprehensive retrieval for: "${query}"`)
-
   try {
-    // Detect if this is a "show all" or "outline all" type query
-    const completeCatalogPatterns = [
-      /\b(all|every|entire|complete|full list of|outline all|list all|show all)\s+(books?|documents?|papers?|studies?|reports?|articles?)\b/i,
-      /\b(what books? do you have|what's in your|catalog|inventory|database contents)\b/i,
-      /\b(outline|summarize|list)\s+(all|every|everything)\b/i
-    ]
+    console.log('🔍 Starting comprehensive retrieval for query:', query)
 
-    const isCompleteCatalogRequest = completeCatalogPatterns.some(pattern => pattern.test(query))
+    // **CRITICAL FIX**: When asking for complete catalog, we need to get unique books, not chunks
+    const isCatalogRequest = /\b(all|every|complete|catalog|inventory|outline|list)\s+(books?|documents?)\b/i.test(query) ||
+                           /\b(show|tell)\s+me\s+(all|every|everything)\b/i.test(query)
 
-    if (isCompleteCatalogRequest) {
-      console.log('📚 Detected complete catalog request - retrieving all available documents')
+    let vectorResults: any[] = []
+    
+    if (isCatalogRequest) {
+      console.log('📚 Catalog request detected - retrieving all unique books')
       
-      // Get ALL documents with basic info for catalog listing
-      const { data: allDocs, error } = await supabase
+      // Get ALL documents to find unique books
+      const { data: allDocs, error: allDocsError } = await supabase
         .from('documents_enhanced')
-        .select('id, title, author, doc_type, topic, genre, difficulty, content')
-        .order('title')
-        .limit(200) // Reasonable limit to prevent overload
+        .select('*')
+        .not('title', 'is', null)
+        .not('title', 'eq', '')
+        .order('title', { ascending: true })
 
-      if (error) {
-        throw new Error(`Database query failed: ${error.message}`)
+      if (allDocsError) {
+        throw new Error(`Failed to retrieve all documents: ${allDocsError.message}`)
       }
 
-      if (!allDocs || allDocs.length === 0) {
-        return {
-          content: 'No documents found in the knowledge base.',
-          sources: [],
-          totalAvailable: 0,
-          retrievalMethod: 'complete_catalog_empty'
+      vectorResults = allDocs || []
+      console.log(`📊 Retrieved ${vectorResults.length} total document chunks for deduplication`)
+      
+    } else {
+      console.log('🎯 Specific query - using vector search')
+      
+      // Generate embedding for vector search
+      const embedding = await generateEmbedding(query)
+      
+      // Comprehensive vector search
+      const { data: vectorResults_temp, error: vectorError } = await supabase.rpc(
+        'match_documents_enhanced',
+        {
+          query_embedding: embedding,
+          match_threshold: 0.1, // Very low threshold for comprehensive results
+          match_count: 200      // Get many chunks to deduplicate from
+        }
+      )
+
+      if (vectorError) {
+        throw new Error(`Vector search failed: ${vectorError.message}`)
+      }
+
+      vectorResults = vectorResults_temp || []
+    }
+
+    // **ENHANCED DEDUPLICATION**: Group by unique book (title + author)
+    const booksMap = new Map()
+    
+    vectorResults.forEach((doc: any) => {
+      const title = (doc.title || '').trim()
+      const author = (doc.author || '').trim()
+      
+      if (!title) return // Skip documents without titles
+      
+      const bookKey = `${title.toLowerCase()}-${author.toLowerCase()}`
+      const existing = booksMap.get(bookKey)
+      
+      if (!existing) {
+        // First time seeing this book - add it
+        booksMap.set(bookKey, {
+          title,
+          author,
+          doc_type: doc.doc_type || 'Unknown',
+          topic: doc.topic,
+          genre: doc.genre,
+          difficulty: doc.difficulty,
+          content: doc.content || '',
+          similarity: doc.similarity || 1.0,
+          chunks_available: 1,
+          total_chunks: doc.total_chunks || 1,
+          source: doc.source || title
+        })
+      } else {
+        // We've seen this book before - just update chunk count and pick best content
+        existing.chunks_available += 1
+        if ((doc.similarity || 0) > (existing.similarity || 0)) {
+          existing.content = doc.content || existing.content
+          existing.similarity = doc.similarity || existing.similarity
         }
       }
-
-      // Format as catalog
-      const catalogContent = `COMPLETE KNOWLEDGE BASE CATALOG (${allDocs.length} total documents):
-
-${allDocs.map((doc: any, i: number) => 
-  `${i+1}. "${doc.title}" by ${doc.author || 'Unknown Author'}
-   Type: ${doc.doc_type || 'Unknown'} | Topic: ${doc.topic || 'General'} | Genre: ${doc.genre || 'N/A'}
-   Difficulty: ${doc.difficulty || 'N/A'}
-   Preview: ${doc.content?.substring(0, 150) || 'No preview available'}...
-`).join('\n')}
-
-END OF CATALOG`
-
-      const sources = allDocs.map((doc: any) => ({
-        title: doc.title || 'Unknown Document',
-        author: doc.author || 'Unknown Author',
-        doc_type: doc.doc_type || 'Unknown Type',
-        topic: doc.topic,
-        genre: doc.genre,
-        difficulty: doc.difficulty,
-        content: doc.content?.substring(0, 300) || '',
-        relevance_score: 1.0,
-        search_method: 'complete_catalog'
-      }))
-
-      return {
-        content: catalogContent,
-        sources,
-        totalAvailable: allDocs.length,
-        retrievalMethod: 'complete_catalog',
-        warning: allDocs.length >= 200 ? 'Showing first 200 documents. Use more specific queries for targeted results.' : undefined
-      }
-    }
-
-    // Regular targeted retrieval
-    console.log('🎯 Performing targeted document retrieval')
-
-    // Vector search
-    const queryEmbedding = await generateEmbedding(query)
-    const { data: vectorResults, error: vectorError } = await supabase.rpc('match_documents_enhanced', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.1,
-      match_count: 12
     })
 
-    if (vectorError) {
-      throw new Error(`Vector search failed: ${vectorError.message}`)
-    }
+    // Convert to array and sort
+    const uniqueBooks = Array.from(booksMap.values())
+      .sort((a: any, b: any) => {
+        if (isCatalogRequest) {
+          // For catalog requests, sort alphabetically by title
+          return a.title.localeCompare(b.title)
+        } else {
+          // For searches, sort by relevance
+          return (b.similarity || 0) - (a.similarity || 0)
+        }
+      })
 
-    // Get total count for context
-    const { count: totalCount } = await supabase
-      .from('documents_enhanced')
-      .select('*', { count: 'exact', head: true })
+    // Limit results for better UX
+    const maxResults = isCatalogRequest ? 50 : 15 // Show more for catalog requests
+    const finalBooks = uniqueBooks.slice(0, maxResults)
 
-    const finalDocs = (vectorResults || []).slice(0, 8)
+    console.log(`📚 Found ${uniqueBooks.length} unique books, showing top ${finalBooks.length}`)
 
-    // Format results with clear boundaries
-    const contextForAI = `RETRIEVED DOCUMENTS (${finalDocs.length} out of ${totalCount || 'unknown'} total in database):
+    // Create enhanced context with book summaries
+    const contextForAI = `UNIQUE BOOKS/DOCUMENTS RETRIEVED (${finalBooks.length} unique books shown${uniqueBooks.length > maxResults ? ` out of ${uniqueBooks.length} total unique books found` : ''}):
 
-${finalDocs.map((doc: any, i: number) => 
-  `Document ${i+1}: "${doc.title}" by ${doc.author || 'Unknown Author'}
-  Type: ${doc.doc_type || 'Unknown'} | Relevance: ${(doc.similarity || 0).toFixed(3)}
-  Content: ${doc.content}`
-).join('\n\n---\n\n')}
+${finalBooks.map((book: any, i: number) => 
+  `${i+1}. "${book.title}" by ${book.author || 'Unknown Author'}
+     Type: ${book.doc_type} | Genre: ${book.genre || 'N/A'} | Topic: ${book.topic || 'N/A'}
+     Difficulty: ${book.difficulty || 'N/A'} | Available chunks: ${book.chunks_available}/${book.total_chunks}
+     ${isCatalogRequest ? 'Preview: ' + (book.content.substring(0, 150) + '...') : 'Content: ' + book.content}`
+).join('\n\n')}
 
-END OF RETRIEVED DOCUMENTS
+END OF UNIQUE BOOKS
 
-IMPORTANT: Only reference the ${finalDocs.length} documents listed above. Do not mention or reference any other books, documents, or content not explicitly provided in this context.`
+IMPORTANT NOTES:
+- These are ${finalBooks.length} UNIQUE BOOKS (deduplicated from ${vectorResults.length} document chunks)
+- Each book appears only ONCE in this list
+- Some books may have multiple chunks/pages available in the system
+${uniqueBooks.length > maxResults ? `- There are ${uniqueBooks.length - maxResults} additional unique books not shown (ask for "more books" to see them)` : ''}
+- Total document chunks in database: ${vectorResults.length}`
 
-    const sources = finalDocs.map((doc: any) => ({
-      title: doc.title || 'Unknown Document',
-      author: doc.author || 'Unknown Author',
-      doc_type: doc.doc_type || 'Unknown Type',
-      topic: doc.topic,
-      genre: doc.genre,
-      difficulty: doc.difficulty,
-      content: doc.content?.substring(0, 300) || '',
-      relevance_score: doc.similarity || 0,
-      search_method: 'vector'
+    const sources = finalBooks.map((book: any) => ({
+      title: book.title,
+      author: book.author || 'Unknown Author',
+      doc_type: book.doc_type || 'Unknown Type',
+      topic: book.topic,
+      genre: book.genre,
+      difficulty: book.difficulty,
+      content: book.content?.substring(0, 300) || '',
+      relevance_score: book.similarity || 1.0,
+      chunks_available: book.chunks_available,
+      total_chunks: book.total_chunks,
+      search_method: isCatalogRequest ? 'catalog_browse' : 'vector_search'
     }))
 
     return {
       content: contextForAI,
       sources,
-      totalAvailable: totalCount || 0,
-      retrievalMethod: 'targeted_retrieval'
+      totalAvailable: uniqueBooks.length,
+      retrievalMethod: isCatalogRequest ? 'complete_catalog' : 'targeted_search',
+      warning: uniqueBooks.length > maxResults ? `Showing ${maxResults} of ${uniqueBooks.length} unique books. Ask for "more books" to see additional titles.` : undefined
     }
 
   } catch (error) {
@@ -138,8 +162,6 @@ IMPORTANT: Only reference the ${finalDocs.length} documents listed above. Do not
     throw error
   }
 }
-
-
 
 export async function POST(request: NextRequest) {
   try {
@@ -169,11 +191,26 @@ export async function POST(request: NextRequest) {
       conversationContext += '\n'
     }
 
-    // Use clean query without conversation pollution for retrieval
+    // Enhanced query processing for counting and "more" requests
     let cleanQuery = message.trim()
     
+    // Detect requests for more documents or corrections about count
+    const countingPatterns = [
+      /\b(that is|that's|only|just)\s+(\d+)\b/i,
+      /\b(more|additional|other)\s+(books?|documents?)\b/i,
+      /\b(show me more|give me more|need more)\b/i
+    ]
+    
+    const isRequestingMore = countingPatterns.some(pattern => pattern.test(message))
+    
+    if (isRequestingMore && !(/\b(all|every|complete)\b/i.test(message))) {
+      // Convert counting responses to complete catalog requests
+      cleanQuery = "show me all books and documents in your knowledge base"
+      console.log('🔄 Converted counting/more request to complete catalog request')
+    }
+    
     // Only enhance query if it has clear pronouns/references that need context
-    const needsContext = /\b(it|that|this|they|them|those|these|he|she|his|her|their)\b/i.test(message)
+    const needsContext = /\b(it|that|this|they|them|those|these|he|she|his|her|their)\b/i.test(message) && !isRequestingMore
     
     if (needsContext && conversationContext) {
       console.log('🔗 Query contains pronouns - attempting contextual enhancement')
@@ -207,8 +244,8 @@ Clean search query:`
     
     const retrieveResult = await comprehensiveRetrieve(cleanQuery, supabase)
 
-    // Generate response with strict boundaries
-    let systemPrompt = `You are a knowledge base assistant for an asset management company. You have retrieved ${retrieveResult.sources.length} documents from the knowledge bank.
+    // Generate response with strict boundaries and enhanced deduplication instructions
+    let systemPrompt = `You are a knowledge base assistant for an asset management company. You have retrieved ${retrieveResult.sources.length} unique documents from the knowledge bank.
 
 ${conversationContext}
 
@@ -216,11 +253,17 @@ ${retrieveResult.content}
 
 CRITICAL CONSTRAINTS:
 1. ONLY use information from the documents explicitly provided above
-2. Do NOT reference any books, authors, or content not listed in the retrieved documents
-3. If asked about "all books" but only ${retrieveResult.sources.length} are retrieved, say "Here are the ${retrieveResult.sources.length} most relevant documents I found" and list only those
-4. When mentioning any book/document, it MUST be from the retrieved list above
-5. If the query asks for more than what's available in the retrieved documents, acknowledge the limitation
-6. Maintain conversation continuity but stay within retrieved content boundaries
+2. Do NOT reference any books, authors, or content not listed in the retrieved documents  
+3. Each document should be mentioned only ONCE - no duplicates or repetitions
+4. If asked for a specific number of books but you have fewer unique documents, be honest about the limitation
+5. When listing books/documents, ensure each title appears only once in your response
+6. If user points out counting issues (like "that is 4!"), acknowledge and offer to show complete catalog
+7. Maintain conversation continuity but stay within retrieved content boundaries
+
+DEDUPLICATION RULES:
+- Never list the same book/document twice
+- If you have multiple versions of the same work, mention it only once
+- Be precise about the actual number of unique documents you have
 
 ${retrieveResult.warning ? `IMPORTANT: ${retrieveResult.warning}` : ''}
 
@@ -238,7 +281,6 @@ User Question: ${message}`
       totalDocumentsAvailable: retrieveResult.totalAvailable,
       retrievalMethod: retrieveResult.retrievalMethod,
       warning: retrieveResult.warning,
-      feedbackApplied: relevantFeedback ? relevantFeedback.length : 0,
       conversationContextUsed: chatHistory.length > 0,
       method: 'comprehensive_rag'
     })
