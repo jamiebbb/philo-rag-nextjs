@@ -9,6 +9,18 @@ interface RetrievalStage {
   confidence: number
 }
 
+interface DocumentResult {
+  id: string
+  title: string
+  author?: string
+  content: string
+  similarity?: number
+  rerank_score?: number
+  rerank_reasoning?: string
+  source_entity?: string
+  [key: string]: any
+}
+
 // Advanced multi-stage retrieval
 async function advancedRetrieve(query: string, supabase: any): Promise<{
   content: string
@@ -74,7 +86,7 @@ Respond in JSON format:
   })
 
   // Stage 3: Entity-based retrieval
-  let entityResults: any[] = []
+  let entityResults: DocumentResult[] = []
   for (const entity of queryAnalysis.entities) {
     const { data: entityDocs } = await supabase
       .from('documents_enhanced')
@@ -83,7 +95,7 @@ Respond in JSON format:
       .limit(5)
     
     if (entityDocs) {
-      entityResults.push(...entityDocs.map(doc => ({...doc, similarity: 0.9, source_entity: entity})))
+      entityResults.push(...entityDocs.map((doc: any) => ({...doc, similarity: 0.9, source_entity: entity})))
     }
   }
 
@@ -98,14 +110,14 @@ Respond in JSON format:
   const allCandidates = [...(primaryResults || []), ...entityResults]
   const uniqueCandidates = new Map()
   
-  allCandidates.forEach(doc => {
+  allCandidates.forEach((doc: any) => {
     const existing = uniqueCandidates.get(doc.id)
     if (!existing || doc.similarity > existing.similarity) {
       uniqueCandidates.set(doc.id, doc)
     }
   })
 
-  let finalResults = Array.from(uniqueCandidates.values())
+  let finalResults = Array.from(uniqueCandidates.values()) as DocumentResult[]
 
   // Advanced reranking based on query analysis
   const rerankingPrompt = `You are a document relevance expert. Given a query analysis and candidate documents, score each document's relevance (0-100).
@@ -113,7 +125,7 @@ Respond in JSON format:
 Query Analysis: ${JSON.stringify(queryAnalysis)}
 
 Documents to score:
-${finalResults.map((doc, i) => `${i+1}. Title: "${doc.title}" by ${doc.author || 'Unknown'}
+${finalResults.map((doc: DocumentResult, i: number) => `${i+1}. Title: "${doc.title}" by ${doc.author || 'Unknown'}
 Content Preview: ${doc.content?.substring(0, 200)}...`).join('\n\n')}
 
 Respond with JSON array of scores: [{"id": 1, "score": 85, "reasoning": "why relevant"}, ...]`
@@ -127,7 +139,7 @@ Respond with JSON array of scores: [{"id": 1, "score": 85, "reasoning": "why rel
     const scores = JSON.parse(rerankingResponse)
     
     finalResults = finalResults
-      .map((doc, i) => {
+      .map((doc: DocumentResult, i: number) => {
         const scoreData = scores.find((s: any) => s.id === i + 1)
         return {
           ...doc,
@@ -135,13 +147,13 @@ Respond with JSON array of scores: [{"id": 1, "score": 85, "reasoning": "why rel
           rerank_reasoning: scoreData?.reasoning || 'No specific reasoning'
         }
       })
-      .sort((a, b) => b.rerank_score - a.rerank_score)
+      .sort((a: DocumentResult, b: DocumentResult) => (b.rerank_score || 0) - (a.rerank_score || 0))
       .slice(0, 8)
 
   } catch (error) {
     console.warn('Reranking failed, using similarity scores:', error)
     finalResults = finalResults
-      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .sort((a: DocumentResult, b: DocumentResult) => (b.similarity || 0) - (a.similarity || 0))
       .slice(0, 8)
   }
 
@@ -157,13 +169,13 @@ Respond with JSON array of scores: [{"id": 1, "score": 85, "reasoning": "why rel
     Math.min(0.95, (finalResults[0].rerank_score || finalResults[0].similarity || 0) / 100) : 0
 
   // Format for AI consumption
-  const contextForAI = finalResults.map((doc, i) => 
+  const contextForAI = finalResults.map((doc: DocumentResult, i: number) => 
     `Document ${i+1}: "${doc.title}" by ${doc.author || 'Unknown'}
     Relevance Score: ${doc.rerank_score || 'N/A'}
     Content: ${doc.content}`
   ).join('\n\n---\n\n')
 
-  const sources = finalResults.map(doc => ({
+  const sources = finalResults.map((doc: DocumentResult) => ({
     title: doc.title || 'Unknown Document',
     author: doc.author || 'Unknown Author',
     doc_type: doc.doc_type || 'Unknown Type',

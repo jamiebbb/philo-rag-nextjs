@@ -2,6 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateEmbedding, generateChatCompletion } from '@/lib/openai'
 
+interface DocumentResult {
+  id: string
+  title: string
+  author?: string
+  content: string
+  topic?: string
+  genre?: string
+  difficulty?: string
+  doc_type?: string
+  tags?: string
+  relevance_score: number
+  match_reason: string
+  search_type: string
+  [key: string]: any
+}
+
 // Enhanced metadata retrieval with semantic understanding
 async function enhancedMetadataRetrieval(query: string, supabase: any): Promise<{
   content: string
@@ -48,7 +64,7 @@ Respond in JSON format:
     console.warn('Metadata analysis failed, using fallback:', error)
     metadataAnalysis = {
       entities: [],
-      topics: query.split(' ').filter(word => word.length > 3),
+      topics: query.split(' ').filter((word: string) => word.length > 3),
       document_types: [],
       difficulty_preference: "any",
       genres: [],
@@ -62,7 +78,7 @@ Respond in JSON format:
   console.log('🧠 Metadata Analysis:', metadataAnalysis)
 
   // Step 2: Adaptive metadata search based on analysis
-  let allCandidates: any[] = []
+  let allCandidates: DocumentResult[] = []
 
   // Entity-focused search
   if (metadataAnalysis.entities && metadataAnalysis.entities.length > 0) {
@@ -76,7 +92,7 @@ Respond in JSON format:
         .limit(5)
       
       if (entityDocs) {
-        const scoredDocs = entityDocs.map(doc => ({
+        const scoredDocs = entityDocs.map((doc: any) => ({
           ...doc,
           relevance_score: calculateEntityRelevance(doc, entity, query),
           match_reason: `Entity match: ${entity}`,
@@ -99,7 +115,7 @@ Respond in JSON format:
         .limit(4)
       
       if (topicDocs) {
-        const scoredDocs = topicDocs.map(doc => ({
+        const scoredDocs = topicDocs.map((doc: any) => ({
           ...doc,
           relevance_score: calculateTopicRelevance(doc, topic, query, metadataAnalysis),
           match_reason: `Topic match: ${topic}`,
@@ -122,7 +138,7 @@ Respond in JSON format:
         .limit(3)
       
       if (typeDocs) {
-        const scoredDocs = typeDocs.map(doc => ({
+        const scoredDocs = typeDocs.map((doc: any) => ({
           ...doc,
           relevance_score: calculateTypeRelevance(doc, docType, metadataAnalysis),
           match_reason: `Document type: ${docType}`,
@@ -158,7 +174,7 @@ Respond in JSON format:
   // Step 3: Advanced deduplication and ranking
   const uniqueDocs = new Map()
   
-  allCandidates.forEach(doc => {
+  allCandidates.forEach((doc: DocumentResult) => {
     const existing = uniqueDocs.get(doc.id)
     if (!existing) {
       uniqueDocs.set(doc.id, doc)
@@ -176,24 +192,24 @@ Respond in JSON format:
     }
   })
 
-  const finalDocs = Array.from(uniqueDocs.values())
-    .sort((a, b) => b.relevance_score - a.relevance_score)
+  const finalDocs = (Array.from(uniqueDocs.values()) as DocumentResult[])
+    .sort((a: DocumentResult, b: DocumentResult) => b.relevance_score - a.relevance_score)
     .slice(0, 6)
 
   console.log(`🎯 Enhanced metadata retrieval results: ${finalDocs.length} documents`)
-  finalDocs.forEach((doc: any, i: number) => {
+  finalDocs.forEach((doc: DocumentResult, i: number) => {
     console.log(`   ${i+1}. "${doc.title}" by ${doc.author || 'Unknown'} - Score: ${doc.relevance_score.toFixed(3)} - ${doc.match_reason}`)
   })
 
   // Format for AI consumption
-  const contextForAI = finalDocs.map((doc: any, i: number) => 
+  const contextForAI = finalDocs.map((doc: DocumentResult, i: number) => 
     `Document ${i+1}: "${doc.title}" by ${doc.author || 'Unknown'}
     Metadata: Topic=${doc.topic}, Genre=${doc.genre}, Difficulty=${doc.difficulty}
     Relevance: ${doc.relevance_score.toFixed(3)} (${doc.match_reason})
     Content: ${doc.content}`
   ).join('\n\n---\n\n')
 
-  const sources = finalDocs.map(doc => ({
+  const sources = finalDocs.map((doc: DocumentResult) => ({
     title: doc.title || 'Unknown Document',
     author: doc.author || 'Unknown Author',
     doc_type: doc.doc_type || 'Unknown Type',
@@ -262,7 +278,7 @@ function calculateTypeRelevance(doc: any, docType: string, analysis: any): numbe
   if (typeMatch) score += 0.2
   
   // Boost for academic/research intent
-  if (analysis.search_intent === 'research' && ['book', 'study', 'report'].includes(docType.toLowerCase())) {
+  if (analysis.search_intent === 'research' && ['book', 'study', 'report'].indexOf(docType.toLowerCase()) !== -1) {
     score += 0.1
   }
   

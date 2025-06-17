@@ -461,7 +461,7 @@ Enhanced search query:`
 
     // Generate response based on decision
     let systemPrompt
-    if (finalDecision === 'RETRIEVE' && documentsFound > 0) {
+    if (finalDecision === 'RETRIEVE' && documentsFound > 0 && retrieveResult) {
       systemPrompt = `You are a knowledge base assistant for an asset management company with access to a curated knowledge bank. You retrieved ${documentsFound} relevant documents to answer the user's question.
 
 ${conversationContext}
@@ -478,7 +478,7 @@ CRITICAL INSTRUCTIONS:
 6. Maintain conversation continuity with the context
 
 USER QUESTION: ${message}`
-    } else if (finalDecision === 'RETRIEVE' && documentsFound === 0) {
+    } else if (finalDecision === 'RETRIEVE' && (documentsFound === 0 || !retrieveResult)) {
       systemPrompt = `You are a knowledge base assistant for an asset management company. 
 
 ${conversationContext}
