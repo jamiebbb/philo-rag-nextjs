@@ -21,22 +21,21 @@ async function comprehensiveRetrieve(query: string, supabase: any): Promise<{
     let vectorResults: any[] = []
     
     if (isCatalogRequest) {
-      console.log('📚 Catalog request detected - retrieving all unique books')
+      console.log('📚 Catalog request detected - retrieving ALL unique books')
       
-      // Get ALL documents to find unique books
+      // Get ALL documents to find unique books - remove any filtering that might limit results
       const { data: allDocs, error: allDocsError } = await supabase
         .from('documents_enhanced')
         .select('*')
-        .not('title', 'is', null)
-        .not('title', 'eq', '')
         .order('title', { ascending: true })
 
       if (allDocsError) {
         throw new Error(`Failed to retrieve all documents: ${allDocsError.message}`)
       }
 
-      vectorResults = allDocs || []
-      console.log(`📊 Retrieved ${vectorResults.length} total document chunks for deduplication`)
+      // Filter out docs without titles AFTER retrieval to see what we have
+      vectorResults = (allDocs || []).filter((doc: any) => doc.title && doc.title.trim())
+      console.log(`📊 Retrieved ${allDocs?.length || 0} total documents, ${vectorResults.length} with valid titles`)
       
     } else {
       console.log('🎯 Specific query - using vector search')
@@ -115,6 +114,7 @@ async function comprehensiveRetrieve(query: string, supabase: any): Promise<{
     const finalBooks = uniqueBooks.slice(0, maxResults)
 
     console.log(`📚 Found ${uniqueBooks.length} unique books, showing top ${finalBooks.length}`)
+    console.log('📋 Unique books found:', uniqueBooks.map(book => `"${book.title}" by ${book.author} (${book.chunks_available} chunks)`).join(', '))
 
     // Create enhanced context with book summaries
     const contextForAI = `UNIQUE BOOKS/DOCUMENTS RETRIEVED (${finalBooks.length} unique books shown${uniqueBooks.length > maxResults ? ` out of ${uniqueBooks.length} total unique books found` : ''}):
