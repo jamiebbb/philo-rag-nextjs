@@ -102,7 +102,7 @@ export function ChatInterface() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/chat-simple', {
+      const response = await fetch('/api/chat-agentic', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -126,6 +126,8 @@ export function ChatInterface() {
         content: data.response,
         timestamp: new Date(),
         sources: data.sources || [],
+        metadata: data.metadata || {},
+        classification: data.classification || null,
       }
 
       setMessages(prev => [...prev, assistantMessage])

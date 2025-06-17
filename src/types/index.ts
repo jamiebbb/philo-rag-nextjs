@@ -42,6 +42,13 @@ export interface ChatMessage {
   content: string
   timestamp: Date
   sources?: DocumentSource[]
+  metadata?: Record<string, any>
+  classification?: {
+    type: string
+    confidence: number
+    reasoning: string
+    contentFilter?: string
+  }
   feedback?: {
     type: 'helpful' | 'not_helpful' | 'partial' | 'detailed'
     rating?: number
