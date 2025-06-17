@@ -172,6 +172,8 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🔍 Comprehensive Chat API called with message:', message.substring(0, 100) + '...')
+    console.log('🔍 Full message:', message)
+    console.log('🔍 Chat history length:', chatHistory.length)
 
     const supabase = createServerSupabaseClient()
 
@@ -242,7 +244,13 @@ Clean search query:`
       }
     }
     
+    console.log('🔄 About to call comprehensiveRetrieve with query:', cleanQuery)
     const retrieveResult = await comprehensiveRetrieve(cleanQuery, supabase)
+    console.log('✅ Retrieved result:', {
+      sources: retrieveResult.sources.length,
+      totalAvailable: retrieveResult.totalAvailable,
+      method: retrieveResult.retrievalMethod
+    })
 
     // Generate response with strict boundaries and enhanced deduplication instructions
     let systemPrompt = `You are a knowledge base assistant for an asset management company. You have retrieved ${retrieveResult.sources.length} unique documents from the knowledge bank.
