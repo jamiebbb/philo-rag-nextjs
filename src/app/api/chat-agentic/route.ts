@@ -71,17 +71,29 @@ async function classifyQuery(message: string): Promise<QueryClassification> {
     }
   }
 
-  // Direct knowledge questions
+  // Direct knowledge questions - but most should check context first (hybrid)
   if (/\b(what\s+is|explain|define|how\s+does|why\s+does|tell\s+me\s+about)\b/i.test(message) ||
       /\?$/.test(message.trim())) {
     
-    // Check if it might need context too (hybrid)
-    const hasSpecificTerms = /\b(warren\s+buffett|benjamin\s+graham|fisher|munger|specific\s+author|book\s+title)/i.test(message)
+    // Most "what is" questions should check context first since investment knowledge base likely has better info
+    const isInvestmentTerm = /\b(scuttlebutt|value\s+investing|dividend|compound|diversification|portfolio|risk|return|equity|bond|stock|market|finance|investment|trading|analysis)\b/i.test(message)
+    const hasSpecificTerms = /\b(warren\s+buffett|benjamin\s+graham|fisher|munger|charlie\s+munger)\b/i.test(message)
     
+    // Default to hybrid for investment-related questions to check context first
+    if (isInvestmentTerm || hasSpecificTerms) {
+      return {
+        type: 'hybrid',
+        confidence: 0.85,
+        reasoning: 'Investment/finance question - check knowledge base first then supplement with general knowledge',
+        contentFilter
+      }
+    }
+    
+    // Only use direct for very general questions
     return {
-      type: hasSpecificTerms ? 'hybrid' : 'direct_question',
-      confidence: 0.80,
-      reasoning: hasSpecificTerms ? 'Question that needs both context and general knowledge' : 'General knowledge question',
+      type: 'direct_question',
+      confidence: 0.70,
+      reasoning: 'General non-investment question - use general knowledge',
       contentFilter
     }
   }
@@ -130,6 +142,7 @@ async function handleCatalogBrowse(
         genre: doc.genre,
         topic: doc.topic,
         difficulty: doc.difficulty,
+        summary: doc.summary,
         content_chunks: [],
         total_chunks: 0
       })
@@ -169,8 +182,8 @@ Showing ${paginatedItems.length} of ${allItems.length} total ${classification.co
 ${paginatedItems.map((item, i) => 
   `${startIndex + i + 1}. "${item.title}" by ${item.author}
      Type: ${item.doc_type} | Genre: ${item.genre || 'N/A'} | Topic: ${item.topic || 'N/A'}
-     Difficulty: ${item.difficulty || 'N/A'} | Chunks Available: ${item.total_chunks}
-     Content Sample: ${item.content_chunks[0]?.substring(0, 150) || 'No content preview'}...`
+     Difficulty: ${item.difficulty || 'N/A'}
+     Summary: ${item.summary || 'No summary available'}`
 ).join('\n\n')}
 
 PAGINATION STATUS:
@@ -402,17 +415,18 @@ async function handleHybridQuery(
   // Get relevant context
   const searchResult = await handleSpecificSearch(message, classification, supabase)
   
-  const systemPrompt = `You are a knowledgeable assistant with access to both a document knowledge base and general knowledge.
+  const systemPrompt = `You are a knowledgeable assistant with access to both a specialized investment/business knowledge base and general knowledge.
 
 RETRIEVED CONTEXT FROM KNOWLEDGE BASE:
 ${searchResult.contextForAI}
 
 INSTRUCTIONS:
-1. Use the retrieved context when available and relevant
-2. Supplement with general knowledge when helpful
-3. Clearly distinguish between information from the knowledge base vs general knowledge
-4. If the knowledge base has limited information, acknowledge this and provide general knowledge
-5. Be comprehensive and helpful
+1. **PRIORITIZE** information from the knowledge base when available - it likely contains more detailed, specific information than general knowledge
+2. If the knowledge base has relevant information, lead with that and be comprehensive
+3. Only supplement with general knowledge if the knowledge base information is incomplete
+4. If no relevant context is found, then provide general knowledge but mention that the knowledge base didn't have specific information
+5. For investment/finance terms, the knowledge base likely has more valuable insights than general knowledge
+6. Be specific about sources: "Based on the documents in my knowledge base..." vs "From general knowledge..."
 
 User Question: ${message}`
 
