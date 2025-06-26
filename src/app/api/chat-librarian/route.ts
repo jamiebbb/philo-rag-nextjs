@@ -132,7 +132,7 @@ async function getLibraryCatalog(supabase: any, intent: any) {
   // Deduplicate into unique books
   const booksMap = new Map()
   
-  allDocs?.forEach((doc) => {
+  allDocs?.forEach((doc: any) => {
     const title = doc.title?.trim()
     const author = doc.author?.trim() || 'Unknown Author'
     
@@ -156,7 +156,7 @@ async function getLibraryCatalog(supabase: any, intent: any) {
   const books = Array.from(booksMap.values())
   
   // Generate library statistics
-  const stats = {
+  const stats: any = {
     total_books: books.length,
     by_genre: {},
     by_topic: {},
@@ -164,7 +164,7 @@ async function getLibraryCatalog(supabase: any, intent: any) {
     by_type: {}
   }
   
-  books.forEach(book => {
+  books.forEach((book: any) => {
     // Count by genre
     const genre = book.genre || 'Uncategorized'
     stats.by_genre[genre] = (stats.by_genre[genre] || 0) + 1
@@ -193,7 +193,7 @@ async function generateRecommendations(query: string, catalogData: any, intent: 
   let candidates = books
   
   if (intent.topic !== 'general') {
-    candidates = books.filter(book => 
+    candidates = books.filter((book: any) => 
       book.topic?.toLowerCase().includes(intent.topic) ||
       book.genre?.toLowerCase().includes(intent.topic) ||
       book.tags?.toLowerCase().includes(intent.topic)
@@ -201,7 +201,7 @@ async function generateRecommendations(query: string, catalogData: any, intent: 
   }
   
   if (intent.difficulty !== 'any') {
-    candidates = candidates.filter(book => 
+    candidates = candidates.filter((book: any) => 
       book.difficulty === intent.difficulty
     )
   }
