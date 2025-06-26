@@ -371,4 +371,3 @@ User Question: ${message}`
     )
   }
 }
-</rewritten_file>
