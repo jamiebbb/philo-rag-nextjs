@@ -177,7 +177,7 @@ export function LibrarianInterface() {
               <BookOpen className="w-8 h-8 text-indigo-600" />
             </div>
             <p className="text-lg font-medium">Welcome to the PHILO Reading Room</p>
-            <p className="text-sm mt-2">I'm your AI librarian, here to help you discover, learn, and grow.</p>
+            <p className="text-sm mt-2">I&apos;m your AI librarian, here to help you discover, learn, and grow.</p>
             <p className="text-xs mt-2 text-gray-400">
               Ask me about our collection, get reading recommendations, or seek research guidance
             </p>
@@ -364,7 +364,7 @@ export function LibrarianInterface() {
           </button>
         </form>
         <p className="text-xs text-gray-500 mt-2">
-          💡 Try: "Recommend business strategy books" • "What philosophy should I read first?" • "Help me research leadership"
+          💡 Try: &quot;Recommend business strategy books&quot; • &quot;What philosophy should I read first?&quot; • &quot;Help me research leadership&quot;
         </p>
       </div>
     </div>

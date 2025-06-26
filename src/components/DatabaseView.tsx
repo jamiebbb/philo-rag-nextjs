@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Database, FileText, Video, Book, Search, Filter, Eye, BarChart3, Users, Calendar, Tag, Layers } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
@@ -49,11 +49,7 @@ export function DatabaseView() {
   const [totalItems, setTotalItems] = useState(0)
   const [itemsPerPage, setItemsPerPage] = useState(1000)
 
-  useEffect(() => {
-    fetchDatabaseData()
-  }, [currentPage])
-
-  const fetchDatabaseData = async () => {
+  const fetchDatabaseData = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/database-view?page=${currentPage}&limit=${itemsPerPage}`)
@@ -70,7 +66,11 @@ export function DatabaseView() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, itemsPerPage])
+
+  useEffect(() => {
+    fetchDatabaseData()
+  }, [fetchDatabaseData])
 
   const getUniqueDocuments = () => {
     const documentMap = new Map()
