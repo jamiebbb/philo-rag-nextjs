@@ -11,13 +11,9 @@ const nextConfig = {
     return config;
   },
   experimental: {
-    serverActions: true,
-  },
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb'
-    },
-    responseLimit: '50mb'
+    serverActions: {
+      bodySizeLimit: '50mb'
+    }
   }
 }
 
