@@ -25,7 +25,7 @@ export function LibrarianInterface() {
     loadSession,
     deleteSession,
     clearAllSessions,
-    persistenceLoading
+    isLoading: persistenceLoading
   } = useChatPersistence(
     messages,
     setMessages,
