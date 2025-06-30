@@ -13,12 +13,13 @@ interface LibrarianChatMessage extends ChatMessage {
 }
 
 export function LibrarianInterface() {
-  const [messages, setMessages] = useState<LibrarianChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const {
+    messages,
+    setMessages,
     sessions,
     currentSessionId,
     createNewSession,
@@ -26,12 +27,7 @@ export function LibrarianInterface() {
     deleteSession,
     clearAllSessions,
     isLoading: persistenceLoading
-  } = useChatPersistence(
-    messages,
-    setMessages,
-    'librarian_sessions',
-    'Reading Room Librarian'
-  )
+  } = useChatPersistence()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
