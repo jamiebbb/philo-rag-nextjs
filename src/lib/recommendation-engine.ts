@@ -121,7 +121,7 @@ export class RecommendationEngine {
     // Deduplicate and organize
     const booksMap = new Map()
     
-    allDocs?.forEach((doc) => {
+    allDocs?.forEach((doc: any) => {
       const title = doc.title?.trim()
       const author = doc.author?.trim() || 'Unknown Author'
       
@@ -136,7 +136,7 @@ export class RecommendationEngine {
           genre: doc.genre || 'General',
           topic: doc.topic || 'General',
           difficulty: doc.difficulty || 'Intermediate',
-          tags: doc.tags ? doc.tags.split(',').map(t => t.trim()) : [],
+          tags: doc.tags ? doc.tags.split(',').map((t: string) => t.trim()) : [],
           summary: doc.summary || '',
           created_at: doc.created_at
         })
@@ -291,7 +291,8 @@ export class RecommendationEngine {
     }
 
     // Boost for popular categories
-    if (['business', 'philosophy', 'psychology'].includes(book.genre?.toLowerCase())) {
+    const genre = book.genre?.toLowerCase() || ''
+    if (['business', 'philosophy', 'psychology'].indexOf(genre) !== -1) {
       score += 0.1
     }
 
@@ -323,7 +324,7 @@ export class RecommendationEngine {
 
   private estimateReadingTime(book: any): string {
     // Simple estimation based on document type
-    const timeEstimates = {
+    const timeEstimates: Record<string, string> = {
       'Book': '6-8 hours',
       'Article': '15-30 minutes',
       'Report': '45-90 minutes',
