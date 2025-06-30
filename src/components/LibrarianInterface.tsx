@@ -180,7 +180,9 @@ export function LibrarianInterface() {
           </div>
         )}
 
-        {messages.map((message) => (
+        {messages.map((message) => {
+          const librarianMessage = message as LibrarianChatMessage
+          return (
           <div key={message.id} className="space-y-4">
             {/* Main Message */}
             <div className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -215,7 +217,7 @@ export function LibrarianInterface() {
             {message.role === 'assistant' && (
               <div className="ml-12 space-y-4">
                 {/* Recommendations */}
-                {message.recommendations && message.recommendations.length > 0 && (
+                {librarianMessage.recommendations && librarianMessage.recommendations.length > 0 && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Lightbulb className="w-5 h-5 text-green-600" />
@@ -239,14 +241,14 @@ export function LibrarianInterface() {
                 )}
 
                 {/* Missing Materials */}
-                {message.missingMaterials && message.missingMaterials.length > 0 && (
+                {librarianMessage.missingMaterials && librarianMessage.missingMaterials.length > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Archive className="w-5 h-5 text-amber-600" />
                       <h3 className="font-semibold text-amber-800">Suggested Acquisitions</h3>
                     </div>
                     <div className="space-y-2">
-                      {message.missingMaterials.map((missing, index) => (
+                      {librarianMessage.missingMaterials.map((missing, index) => (
                         <div key={index} className="bg-white rounded-lg p-3 border border-amber-100">
                           <div className="font-medium text-gray-900">📖 {missing.title}</div>
                           <div className="text-sm text-gray-600">by {missing.author}</div>
@@ -321,7 +323,8 @@ export function LibrarianInterface() {
               </div>
             )}
           </div>
-        ))}
+          )
+        })}
 
         {isLoading && (
           <div className="flex justify-start">
