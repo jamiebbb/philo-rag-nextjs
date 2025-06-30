@@ -63,9 +63,12 @@ export interface DocumentSource {
   doc_type?: string
   content: string
   relevance_score?: number
+  similarity?: number
   genre?: string
   topic?: string
   difficulty?: string
+  page_number?: number
+  chunk_id?: string
 }
 
 export interface UploadProgress {

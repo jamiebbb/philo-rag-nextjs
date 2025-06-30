@@ -1,6 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateChatCompletion, generateEmbedding } from '@/lib/openai'
+import { CitationFormatter } from '@/lib/citation-formatter'
+
+// Helper function to extract page numbers from content
+function extractPageFromContent(content: string): number | null {
+  if (!content) return null
+
+  const pagePatterns = [
+    /(?:page|p\.)\s*(\d+)/i,
+    /\[page\s*(\d+)\]/i,
+    /\(p\.?\s*(\d+)\)/i,
+    /page\s*#?\s*(\d+)/i
+  ]
+
+  for (const pattern of pagePatterns) {
+    const match = content.match(pattern)
+    if (match) {
+      const pageNum = parseInt(match[1])
+      if (pageNum > 0 && pageNum < 10000) {
+        return pageNum
+      }
+    }
+  }
+
+  return null
+}
 
 // Simplified query classification - less rigid, more flexible
 type QueryType = 
@@ -191,20 +216,73 @@ Present this in a clear, helpful way for the user.`
 async function handleRecommendation(message: string, classification: QueryClassification, supabase: any) {
   console.log('🎯 Handling recommendation request')
   
-  // Get available content for recommendations
-  const catalogResult = await handleCatalogBrowse(message, classification, supabase)
+  // Get available content for recommendations via vector search for better relevance
+  const queryEmbedding = await generateEmbedding(message)
+  
+  const { data: vectorResults, error: vectorError } = await supabase.rpc(
+    'match_documents_enhanced',
+    {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.1, // Lower threshold for recommendations
+      match_count: 15
+    }
+  )
 
-  const systemPrompt = `You are a knowledgeable advisor. The user is asking for book recommendations.
+  let sources: any[] = []
+  let contextForAI = ''
 
-AVAILABLE CONTENT IN MY KNOWLEDGE BASE:
-${catalogResult.contextForAI}
+  if (!vectorError && vectorResults && vectorResults.length > 0) {
+    // Deduplicate books for recommendations
+    const booksMap = new Map()
+    
+    vectorResults.forEach((doc: any) => {
+      if (!doc.title) return
+
+      const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
+      
+      if (!booksMap.has(bookKey)) {
+        booksMap.set(bookKey, {
+          title: doc.title,
+          author: doc.author || 'Unknown Author',
+          content: doc.content || '',
+          doc_type: doc.doc_type,
+          genre: doc.genre,
+          topic: doc.topic,
+          difficulty: doc.difficulty,
+          summary: doc.summary,
+          similarity: doc.similarity || 0.8, // High relevance for recommendations
+          page_number: extractPageFromContent(doc.content)
+        })
+      }
+    })
+
+    sources = Array.from(booksMap.values())
+      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .slice(0, 10)
+
+    contextForAI = `BOOKS AVAILABLE FOR RECOMMENDATIONS (${sources.length} books found):
+
+${sources.map((book, i) => 
+  `${i + 1}. "${book.title}" by ${book.author} (Match: ${Math.round((book.similarity || 0) * 100)}%)
+   Type: ${book.doc_type} | Genre: ${book.genre || 'N/A'} | Topic: ${book.topic || 'N/A'}
+   Difficulty: ${book.difficulty || 'N/A'}
+   Summary: ${book.summary || 'No summary available'}`
+).join('\n\n')}`
+  } else {
+    contextForAI = 'No books found in my knowledge base for this query.'
+  }
+
+  const systemPrompt = `You are a knowledgeable book advisor with access to a personal library.
+
+${contextForAI}
 
 INSTRUCTIONS:
-1. First recommend relevant items from my knowledge base above if available
-2. Then provide additional general recommendations if helpful
-3. Explain why each recommendation is valuable
-4. Be specific about which recommendations come from my knowledge base vs general knowledge
-5. If the user asks for "another one" or similar, provide different recommendations
+1. First recommend the most relevant books from my knowledge base above (if any)
+2. Explain why each recommendation is valuable and relevant to the request
+3. Include specific details about the books (genre, difficulty, key topics)
+4. Then provide 2-3 additional general recommendations if helpful
+5. Be clear about which recommendations come from my knowledge base vs general knowledge
+6. If this appears to be a follow-up request ("another one"), provide different recommendations
 
 User Request: ${message}`
 
@@ -213,15 +291,22 @@ User Request: ${message}`
     { role: 'user', content: message }
   ])
 
+  // Add citations if we have sources
+  let finalResponse = response
+  if (sources.length > 0) {
+    finalResponse = CitationFormatter.addCitationsToResponse(response, sources)
+  }
+
   return {
-    contextForAI: catalogResult.contextForAI,
-    sources: catalogResult.sources,
+    contextForAI,
+    sources,
     metadata: {
-      ...catalogResult.metadata,
       responseType: 'recommendation',
+      knowledgeBaseBooks: sources.length,
+      avgRelevance: sources.length > 0 ? Math.round(sources.reduce((sum, s) => sum + (s.similarity || 0), 0) / sources.length * 100) : 0,
       combinesAvailableAndGeneral: true
     },
-    directResponse: response
+    directResponse: finalResponse
   }
 }
 
@@ -244,20 +329,37 @@ async function handleHybridQuery(message: string, classification: QueryClassific
   let sources: any[] = []
 
   if (!vectorError && vectorResults && vectorResults.length > 0) {
-    contextFromKnowledgeBase = vectorResults.map((doc: any, i: number) => 
-      `SOURCE ${i + 1}: "${doc.title}" by ${doc.author || 'Unknown'}
+    // Deduplicate and enhance sources with full citation info
+    const sourcesMap = new Map()
+    
+    vectorResults.forEach((doc: any) => {
+      if (!doc.title) return
+
+      const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
+      
+      if (!sourcesMap.has(bookKey) || (doc.similarity > (sourcesMap.get(bookKey)?.similarity || 0))) {
+        sourcesMap.set(bookKey, {
+          title: doc.title,
+          author: doc.author || 'Unknown Author',
+          content: doc.content || '',
+          doc_type: doc.doc_type,
+          similarity: doc.similarity,
+          page_number: extractPageFromContent(doc.content)
+        })
+      }
+    })
+
+    sources = Array.from(sourcesMap.values())
+      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .slice(0, 8)
+
+    contextFromKnowledgeBase = sources.map((doc: any, i: number) => 
+      `SOURCE ${i + 1}: "${doc.title}" by ${doc.author} (Relevance: ${Math.round((doc.similarity || 0) * 100)}%)
 Content: ${doc.content}`
     ).join('\n\n')
-
-    sources = vectorResults.slice(0, 5).map((doc: any) => ({
-      title: doc.title,
-      author: doc.author,
-      content: doc.content?.substring(0, 300) || '',
-      similarity: doc.similarity
-    }))
   }
 
-  const systemPrompt = `You are a knowledgeable assistant with access to both a knowledge base and general knowledge.
+  const systemPrompt = `You are a knowledgeable assistant with access to both a specialized knowledge base and general knowledge.
 
 ${contextFromKnowledgeBase ? `RELEVANT CONTENT FROM MY KNOWLEDGE BASE:
 ${contextFromKnowledgeBase}
@@ -265,10 +367,11 @@ ${contextFromKnowledgeBase}
 ` : 'No specific relevant content found in my knowledge base. '} 
 
 INSTRUCTIONS:
-1. If I have relevant content in my knowledge base above, prioritize that information
-2. Supplement with general knowledge if needed to provide a complete answer
-3. Be clear about what comes from my knowledge base vs general knowledge
-4. If no relevant knowledge base content, provide helpful general knowledge
+1. If I have relevant content in my knowledge base above, prioritize that information and cite the sources
+2. When referencing information from my knowledge base, use inline citations like: "According to The Intelligent Investor by Benjamin Graham..."
+3. Supplement with general knowledge if needed to provide a complete answer
+4. Be clear about what comes from my knowledge base vs general knowledge
+5. If no relevant knowledge base content, provide helpful general knowledge but mention the limitation
 
 User Question: ${message}`
 
@@ -277,15 +380,23 @@ User Question: ${message}`
     { role: 'user', content: message }
   ])
 
+  // Add formatted citations to the response if we have sources
+  let finalResponse = response
+  if (sources.length > 0) {
+    finalResponse = CitationFormatter.addCitationsToResponse(response, sources)
+  }
+
   return {
     contextForAI: contextFromKnowledgeBase || 'No relevant knowledge base content found',
     sources,
     metadata: {
       responseType: 'hybrid',
       hasKnowledgeBaseContent: contextFromKnowledgeBase.length > 0,
-      combinesRetrievedAndGeneral: true
+      combinesRetrievedAndGeneral: true,
+      sourcesCount: sources.length,
+      avgRelevance: sources.length > 0 ? Math.round(sources.reduce((sum, s) => sum + (s.similarity || 0), 0) / sources.length * 100) : 0
     },
-    directResponse: response
+    directResponse: finalResponse
   }
 }
 

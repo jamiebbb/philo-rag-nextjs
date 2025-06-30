@@ -366,17 +366,38 @@ export function UnifiedChatInterface() {
                   
                   {message.sources && message.sources.length > 0 && (
                     <div className="text-xs text-gray-600">
-                      <div className="font-medium text-gray-700 mb-1">
-                        📚 Sources ({message.sources.length}):
+                      <div className="font-medium text-gray-700 mb-2">
+                        📚 Sources ({message.sources.length}) - Relevance Scores:
                       </div>
-                      {message.sources.slice(0, 3).map((source, index) => (
-                        <div key={index} className="ml-2 text-gray-600">
-                          • &quot;{source.title}&quot; {source.author && `by ${source.author}`}
+                      {message.sources.slice(0, 5).map((source, index) => (
+                        <div key={index} className="ml-2 mb-1 p-2 bg-gray-50 rounded border-l-2 border-blue-200">
+                          <div className="font-medium text-gray-800">
+                            {index + 1}. &quot;{source.title}&quot; {source.author && `by ${source.author}`}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="text-gray-500">
+                              Type: {source.doc_type || 'Book'}
+                            </div>
+                            {source.similarity && (
+                              <div className={`px-2 py-1 rounded text-xs font-medium ${
+                                source.similarity >= 0.8 ? 'bg-green-100 text-green-700' :
+                                source.similarity >= 0.6 ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {Math.round(source.similarity * 100)}% relevant
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
-                      {message.sources.length > 3 && (
-                        <div className="ml-2 text-gray-500">
-                          + {message.sources.length - 3} more sources
+                      {message.sources.length > 5 && (
+                        <div className="ml-2 text-gray-500 mt-1">
+                          + {message.sources.length - 5} more sources
+                        </div>
+                      )}
+                      {message.metadata?.avgRelevance && (
+                        <div className="ml-2 mt-2 text-gray-500 font-medium">
+                          Average relevance: {message.metadata.avgRelevance}%
                         </div>
                       )}
                     </div>
