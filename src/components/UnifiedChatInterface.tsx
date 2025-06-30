@@ -204,9 +204,9 @@ export function UnifiedChatInterface() {
             
             <div className="mt-4 p-3 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-700">
-                <strong>💡 Tip:</strong> I can help with advice requests, book recommendations, memory queries ("name 3 books"), 
-                topic-specific lists ("2 books on banking"), and HR scenarios. 
-                Add "use only uploaded books" to limit responses to your knowledge base.
+                <strong>💡 Tip:</strong> I can help with advice requests, book recommendations, memory queries (&quot;name 3 books&quot;), 
+                topic-specific lists (&quot;2 books on banking&quot;), and HR scenarios. 
+                Add &quot;use only uploaded books&quot; to limit responses to your knowledge base.
               </p>
             </div>
           </div>
@@ -272,7 +272,7 @@ export function UnifiedChatInterface() {
                       </div>
                       {message.sources.slice(0, 3).map((source, index) => (
                         <div key={index} className="ml-2 text-gray-600">
-                          • "{source.title}" {source.author && `by ${source.author}`}
+                          • &quot;{source.title}&quot; {source.author && `by ${source.author}`}
                         </div>
                       ))}
                       {message.sources.length > 3 && (
@@ -325,7 +325,7 @@ export function UnifiedChatInterface() {
           </form>
           
           <div className="mt-2 text-xs text-gray-500 text-center">
-            Try: "Name 3 books" • "Recommend books for beginners" • "Use only uploaded books to answer..."
+            Try: &quot;Name 3 books&quot; • &quot;Recommend books for beginners&quot; • &quot;Use only uploaded books to answer...&quot;
           </div>
         </div>
       </div>

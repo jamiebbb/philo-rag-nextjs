@@ -88,6 +88,17 @@ export function useChatPersistence() {
     }
   }, [createNewSession, cleanupOldSessions])
 
+  const generateSessionTitle = useCallback((messages: ChatMessage[]): string => {
+    const firstUserMessage = messages.find(m => m.role === 'user')
+    if (firstUserMessage) {
+      // Take first 30 characters of the first user message
+      return firstUserMessage.content.length > 30 
+        ? firstUserMessage.content.substring(0, 30) + '...'
+        : firstUserMessage.content
+    }
+    return 'New Chat'
+  }, [])
+
   const saveCurrentSession = useCallback(() => {
     if (!currentSessionId) return
 
@@ -112,18 +123,7 @@ export function useChatPersistence() {
     } catch (error) {
       console.error('Failed to save chat session:', error)
     }
-  }, [currentSessionId, messages, sessions])
-
-  const generateSessionTitle = useCallback((messages: ChatMessage[]): string => {
-    const firstUserMessage = messages.find(m => m.role === 'user')
-    if (firstUserMessage) {
-      // Take first 30 characters of the first user message
-      return firstUserMessage.content.length > 30 
-        ? firstUserMessage.content.substring(0, 30) + '...'
-        : firstUserMessage.content
-    }
-    return 'New Chat'
-  }, [])
+  }, [currentSessionId, messages, sessions, generateSessionTitle])
 
   // Load sessions from localStorage on mount
   useEffect(() => {
