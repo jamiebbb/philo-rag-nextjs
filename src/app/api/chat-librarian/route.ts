@@ -326,8 +326,8 @@ ${librarianResult.recommendations.length > 0 ?
   ).join('\n') : 'No specific recommendations generated.'}
 
 MISSING MATERIALS IDENTIFIED:
-${librarianResult.missingMaterials?.length > 0 ?
-  librarianResult.missingMaterials.map((missing, i) =>
+${(librarianResult.missingMaterials || []).length > 0 ?
+  (librarianResult.missingMaterials || []).map((missing, i) =>
     `${i+1}. "${missing.title}" by ${missing.author} - ${missing.reason}`
   ).join('\n') : 'No gaps identified for this query.'}
 
