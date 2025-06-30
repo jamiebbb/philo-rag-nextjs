@@ -209,7 +209,7 @@ async function generateRecommendations(query: string, catalogData: any, intent: 
   // Sort by relevance and return top recommendations
   return candidates
     .slice(0, 5)
-    .map(book => ({
+    .map((book: any) => ({
       ...book,
       recommendation_reason: generateRecommendationReason(book, intent),
       recommendation_type: 'library_collection'
@@ -244,7 +244,7 @@ async function identifyMissingMaterials(query: string, catalogData: any) {
   
   // Example gap analysis for business topics
   if (queryLower.includes('business') || queryLower.includes('management')) {
-    const businessBooks = books.filter(book => 
+    const businessBooks = books.filter((book: any) => 
       book.topic?.toLowerCase().includes('business') ||
       book.genre?.toLowerCase().includes('business')
     )
@@ -258,7 +258,7 @@ async function identifyMissingMaterials(query: string, catalogData: any) {
     
     return essentialBusinessBooks
       .filter(essential => 
-        !businessBooks.some(book => 
+        !businessBooks.some((book: any) => 
           book.title.toLowerCase().includes(essential.title.toLowerCase())
         )
       )
