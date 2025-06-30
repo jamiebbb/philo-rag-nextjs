@@ -2,14 +2,13 @@
 
 import { useState } from 'react'
 import { DocumentUpload } from '@/components/DocumentUpload'
-import { ChatInterface } from '@/components/ChatInterface'
-import { LibrarianInterface } from '@/components/LibrarianInterface'
+import { UnifiedChatInterface } from '@/components/UnifiedChatInterface'
 import { DocumentManager } from '@/components/DocumentManager'
 import { YouTubeUpload } from '@/components/YouTubeUpload'
 import { DatabaseView } from '@/components/DatabaseView'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'librarian' | 'chat' | 'upload' | 'youtube' | 'manage' | 'database'>('librarian')
+  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'youtube' | 'manage' | 'database'>('chat')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -29,10 +28,9 @@ export default function Home() {
           <div className="bg-white rounded-lg shadow-md p-1">
             <div className="flex space-x-1 overflow-x-auto">
               {[
-                { id: 'librarian', label: '📚 Reading Room', icon: '📚' },
-                { id: 'chat', label: '💬 Technical Chat', icon: '💬' },
+                { id: 'chat', label: '🤖 PHILO Chat', icon: '🤖' },
                 { id: 'upload', label: '📄 PDF Upload', icon: '📄' },
-                { id: 'youtube', label: '🤖 YouTube Upload', icon: '🤖' },
+                { id: 'youtube', label: '🎥 YouTube Upload', icon: '🎥' },
                 { id: 'manage', label: '🔧 Manage', icon: '🔧' },
                 { id: 'database', label: '🗄️ Database View', icon: '🗄️' },
               ].map((tab) => (
@@ -54,8 +52,7 @@ export default function Home() {
 
         {/* Main Content */}
         <div className="max-w-6xl mx-auto">
-          {activeTab === 'librarian' && <LibrarianInterface />}
-          {activeTab === 'chat' && <ChatInterface />}
+          {activeTab === 'chat' && <UnifiedChatInterface />}
           {activeTab === 'upload' && <DocumentUpload />}
           {activeTab === 'youtube' && <YouTubeUpload />}
           {activeTab === 'manage' && <DocumentManager />}
