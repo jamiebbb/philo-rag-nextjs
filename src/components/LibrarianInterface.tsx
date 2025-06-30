@@ -224,7 +224,7 @@ export function LibrarianInterface() {
                       <h3 className="font-semibold text-green-800">Reading Recommendations</h3>
                     </div>
                     <div className="space-y-3">
-                      {message.recommendations.map((rec, index) => (
+                      {librarianMessage.recommendations.map((rec, index) => (
                         <div key={index} className="bg-white rounded-lg p-3 border border-green-100">
                           <div className="font-medium text-gray-900">📚 {rec.title}</div>
                           <div className="text-sm text-gray-600">by {rec.author}</div>
@@ -265,7 +265,7 @@ export function LibrarianInterface() {
                 )}
 
                 {/* Library Stats */}
-                {message.libraryStats && Object.keys(message.libraryStats).length > 0 && (
+                {librarianMessage.libraryStats && Object.keys(librarianMessage.libraryStats).length > 0 && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Bot className="w-5 h-5 text-blue-600" />
@@ -273,24 +273,24 @@ export function LibrarianInterface() {
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-600">{message.libraryStats.total_books || 0}</div>
+                        <div className="text-2xl font-bold text-blue-600">{librarianMessage.libraryStats.total_books || 0}</div>
                         <div className="text-blue-700">Total Books</div>
                       </div>
-                      {message.libraryStats.by_genre && Object.keys(message.libraryStats.by_genre).length > 0 && (
+                      {librarianMessage.libraryStats.by_genre && Object.keys(librarianMessage.libraryStats.by_genre).length > 0 && (
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{Object.keys(message.libraryStats.by_genre).length}</div>
+                          <div className="text-2xl font-bold text-blue-600">{Object.keys(librarianMessage.libraryStats.by_genre).length}</div>
                           <div className="text-blue-700">Genres</div>
                         </div>
                       )}
-                      {message.libraryStats.by_topic && Object.keys(message.libraryStats.by_topic).length > 0 && (
+                      {librarianMessage.libraryStats.by_topic && Object.keys(librarianMessage.libraryStats.by_topic).length > 0 && (
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{Object.keys(message.libraryStats.by_topic).length}</div>
+                          <div className="text-2xl font-bold text-blue-600">{Object.keys(librarianMessage.libraryStats.by_topic).length}</div>
                           <div className="text-blue-700">Topics</div>
                         </div>
                       )}
-                      {message.libraryStats.by_difficulty && Object.keys(message.libraryStats.by_difficulty).length > 0 && (
+                      {librarianMessage.libraryStats.by_difficulty && Object.keys(librarianMessage.libraryStats.by_difficulty).length > 0 && (
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{Object.keys(message.libraryStats.by_difficulty).length}</div>
+                          <div className="text-2xl font-bold text-blue-600">{Object.keys(librarianMessage.libraryStats.by_difficulty).length}</div>
                           <div className="text-blue-700">Levels</div>
                         </div>
                       )}
@@ -299,11 +299,11 @@ export function LibrarianInterface() {
                 )}
 
                 {/* Sources */}
-                {message.sources && message.sources.length > 0 && (
+                {librarianMessage.sources && librarianMessage.sources.length > 0 && (
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <h3 className="font-semibold text-gray-800 mb-3">📚 Sources Referenced</h3>
                     <div className="space-y-2">
-                      {message.sources.map((source, index) => (
+                      {librarianMessage.sources.map((source, index) => (
                         <div key={index} className="bg-white rounded p-3 border text-sm">
                           <div className="font-medium text-gray-900">{source.title}</div>
                           <div className="text-gray-600 text-xs mb-2">
