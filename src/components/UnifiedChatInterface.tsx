@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, BookOpen, Brain, Menu, MessageSquare } from 'lucide-react'
+import { Send, Bot, User, Loader2, BookOpen, Brain, Menu, MessageSquare, ThumbsUp, ThumbsDown, MessageCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { ChatMessage } from '@/types'
 import { useChatPersistence } from '@/hooks/useChatPersistence'
 import { ChatSidebar } from './ChatSidebar'
+import { storeFeedback } from '@/lib/feedback'
 
 export function UnifiedChatInterface() {
   const {
@@ -25,6 +26,7 @@ export function UnifiedChatInterface() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [feedbackStates, setFeedbackStates] = useState<Record<string, { type: string; loading: boolean }>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -91,6 +93,39 @@ export function UnifiedChatInterface() {
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleFeedback = async (messageId: string, feedbackType: string, userQuery: string, aiResponse: string) => {
+    try {
+      setFeedbackStates(prev => ({ 
+        ...prev, 
+        [messageId]: { type: feedbackType, loading: true } 
+      }))
+
+      const success = await storeFeedback(
+        userQuery,
+        aiResponse,
+        feedbackType,
+        currentSessionId
+      )
+
+      if (success) {
+        setFeedbackStates(prev => ({ 
+          ...prev, 
+          [messageId]: { type: feedbackType, loading: false } 
+        }))
+        console.log('✅ Feedback submitted successfully')
+      } else {
+        throw new Error('Failed to submit feedback')
+      }
+    } catch (error) {
+      console.error('❌ Error submitting feedback:', error)
+      setFeedbackStates(prev => {
+        const newState = { ...prev }
+        delete newState[messageId]
+        return newState
+      })
     }
   }
 
@@ -253,6 +288,70 @@ export function UnifiedChatInterface() {
                   </div>
                 </div>
               </div>
+
+              {/* Feedback buttons for assistant messages */}
+              {message.role === 'assistant' && (
+                <div className="ml-13 flex items-center gap-2">
+                  <div className="text-xs text-gray-500 mr-2">Was this helpful?</div>
+                  <button
+                    onClick={() => {
+                      const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                      handleFeedback(message.id, 'helpful', userQuery, message.content)
+                    }}
+                    disabled={feedbackStates[message.id]?.loading}
+                    className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                      feedbackStates[message.id]?.type === 'helpful'
+                        ? 'bg-green-100 text-green-700 border border-green-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                    }`}
+                  >
+                    <ThumbsUp className="w-3 h-3" />
+                    {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'helpful' ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      'Helpful'
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                      handleFeedback(message.id, 'not_helpful', userQuery, message.content)
+                    }}
+                    disabled={feedbackStates[message.id]?.loading}
+                    className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                      feedbackStates[message.id]?.type === 'not_helpful'
+                        ? 'bg-red-100 text-red-700 border border-red-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                    }`}
+                  >
+                    <ThumbsDown className="w-3 h-3" />
+                    {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'not_helpful' ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      'Not helpful'
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                      handleFeedback(message.id, 'partial', userQuery, message.content)
+                    }}
+                    disabled={feedbackStates[message.id]?.loading}
+                    className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                      feedbackStates[message.id]?.type === 'partial'
+                        ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                    }`}
+                  >
+                    <MessageCircle className="w-3 h-3" />
+                    {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'partial' ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      'Partially helpful'
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* Classification & Sources Info */}
               {message.role === 'assistant' && (message.classification || message.sources?.length) && (
