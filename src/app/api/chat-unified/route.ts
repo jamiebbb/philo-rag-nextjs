@@ -48,20 +48,44 @@ function enhanceMessageWithContext(message: string, chatHistory: any[] = []): st
   
   // Handle context-dependent queries
   if (/\b(another\s+one|more|next|continue|similar|like\s+that|give\s+me\s+another)\b/i.test(message)) {
-    // Look for the most recent system response for context
+    // Look for the most recent system response and the user's previous query for context
+    let previousUserQuery = ''
+    let previousAssistantResponse = ''
+    
     for (let i = chatHistory.length - 1; i >= 0; i--) {
       const historyItem = chatHistory[i]
-      if (historyItem.role === 'assistant' && historyItem.content) {
-        const content = historyItem.content.toLowerCase()
-        
-        // If the previous response mentioned books, assume they want another book
-        if (content.includes('book') || content.includes('author') || content.includes('recommend')) {
-          return `${message} (referring to: recommend another book similar to the previous recommendation)`
-        }
-        break
+      if (historyItem.role === 'assistant' && !previousAssistantResponse) {
+        previousAssistantResponse = historyItem.content.toLowerCase()
+      } else if (historyItem.role === 'user' && !previousUserQuery) {
+        previousUserQuery = historyItem.content.toLowerCase()
+      }
+      
+      if (previousUserQuery && previousAssistantResponse) break
+    }
+    
+    // Check if previous query was asking for books from memory/database
+    const wasMemoryQuery = /\b(name|list|show|tell\s+me)\s+.*\b(books?|in\s+(?:your\s+)?memory|in\s+(?:the\s+)?(?:database|collection|library))\b/i.test(previousUserQuery)
+    const wasCatalogQuery = /\b(what|which)\s+books?\s+(?:do\s+you\s+have|are\s+available)\b/i.test(previousUserQuery)
+    
+    // Check if previous response was listing books from the knowledge base
+    const responseListedBooks = previousAssistantResponse.includes('here are') && 
+                               (previousAssistantResponse.includes('books') || previousAssistantResponse.includes('in my knowledge base'))
+    
+    if (wasMemoryQuery || wasCatalogQuery || responseListedBooks) {
+      // If asking for "more" after a memory/catalog query, continue with catalog browsing
+      if (/\b(\d+\s+)?more\b/i.test(message)) {
+        return `${message} (referring to: show me more books from my knowledge base/memory)`
       }
     }
-    return `${message} (contextual request - provide another recommendation or continue from previous topic)`
+    
+    // Check for recommendation context
+    if (previousAssistantResponse.includes('recommend') || 
+        /\b(suggest|good\s+book|best\s+book)\b/i.test(previousUserQuery)) {
+      return `${message} (referring to: recommend another book similar to the previous recommendation)`
+    }
+    
+    // Default enhancement for contextual requests
+    return `${message} (contextual request - continue from previous topic)`
   }
   
   return message
@@ -113,22 +137,22 @@ async function classifyQuery(message: string): Promise<QueryClassification> {
     }
   }
 
-  // Direct knowledge questions for general advice
-  if (/\b(from\s+your\s+own\s+knowledge|give\s+me\s+advice|advice\s+on)\b/i.test(message) &&
-      !/\b(book|document|uploaded|only)\b/i.test(message)) {
+  // Direct knowledge questions - ONLY for explicitly general knowledge requests
+  if (/\b(from\s+your\s+own\s+knowledge|your\s+general\s+knowledge)\b/i.test(message) &&
+      !/\b(book|document|uploaded|context|knowledge\s+base)\b/i.test(message)) {
     return {
       type: 'direct_question',
       confidence: 0.85,
-      reasoning: 'User explicitly asking for general advice/knowledge',
+      reasoning: 'User explicitly requesting general knowledge only',
       contentFilter
     }
   }
 
-  // Default to hybrid - check knowledge base first, supplement with general knowledge
+  // Default to hybrid for most queries - check knowledge base first, supplement with general knowledge
   return {
     type: 'hybrid',
     confidence: 0.80,
-    reasoning: 'Default hybrid approach - check knowledge base and supplement with general knowledge',
+    reasoning: 'Default hybrid approach - check knowledge base first then supplement with general knowledge',
     contentFilter
   }
 }
@@ -184,23 +208,47 @@ async function handleCatalogBrowse(message: string, classification: QueryClassif
     allItems = allItems.filter(item => item.doc_type === 'Video')
   }
 
+  // Detect if this is a "more" request and determine pagination
+  const isMoreRequest = /\b(more|next|another\s+\d+|\d+\s+more)\b/i.test(message)
+  const requestedCount = message.match(/\b(\d+)\b/)?.[1] ? parseInt(message.match(/\b(\d+)\b/)![1]) : 3
+  
+  let startIndex = 0
+  let itemsToShow = requestedCount
+
+  if (isMoreRequest) {
+    // For "more" requests, try to start from where we left off
+    // Since we can't track exact pagination, we'll show a different batch
+    startIndex = Math.floor(Math.random() * Math.max(0, allItems.length - itemsToShow))
+    console.log(`📄 "More" request detected - showing ${itemsToShow} items starting from index ${startIndex}`)
+  } else {
+    // For initial requests, show from the beginning
+    itemsToShow = Math.min(requestedCount, 20) // Cap at 20 for initial requests
+    console.log(`📄 Initial catalog request - showing first ${itemsToShow} items`)
+  }
+
+  const selectedItems = allItems.slice(startIndex, startIndex + itemsToShow)
+  const remainingCount = Math.max(0, allItems.length - (startIndex + itemsToShow))
+
   const contextForAI = `AVAILABLE ${classification.contentFilter?.toUpperCase() || 'CONTENT'} 
 
-I have ${allItems.length} ${classification.contentFilter || 'items'} in my knowledge base:
+${isMoreRequest ? 
+  `Here are ${selectedItems.length} more ${classification.contentFilter || 'items'} from my knowledge base (${remainingCount} still remaining):` :
+  `I have ${allItems.length} ${classification.contentFilter || 'items'} in my knowledge base. Here are ${selectedItems.length}:`
+}
 
-${allItems.slice(0, 20).map((item, i) => 
-    `${i + 1}. "${item.title}" by ${item.author}
+${selectedItems.map((item, i) => 
+    `${startIndex + i + 1}. "${item.title}" by ${item.author}
      Type: ${item.doc_type} | Genre: ${item.genre || 'N/A'} | Topic: ${item.topic || 'N/A'}
      Summary: ${item.summary || 'No summary available'}`
   ).join('\n\n')}
 
-${allItems.length > 20 ? `\n... and ${allItems.length - 20} more items available` : ''}
+${remainingCount > 0 ? `\n📚 I have ${remainingCount} more ${classification.contentFilter || 'items'} available. Ask "give me ${Math.min(remainingCount, requestedCount)} more" to see additional items.` : '\n✅ That\'s all the items in my knowledge base.'}
 
-Present this in a clear, helpful way for the user.`
+Present this as a clear, numbered list. ${isMoreRequest ? 'Make it clear these are additional items.' : 'Mention the total count and that more are available if requested.'}`
 
   return {
     contextForAI,
-    sources: allItems.slice(0, 5).map(item => ({
+    sources: selectedItems.slice(0, 5).map(item => ({
       title: item.title,
       author: item.author,
       doc_type: item.doc_type,
@@ -208,6 +256,10 @@ Present this in a clear, helpful way for the user.`
     })),
     metadata: {
       totalItems: allItems.length,
+      shownItems: selectedItems.length,
+      startIndex,
+      remainingItems: remainingCount,
+      isMoreRequest,
       contentFilter: classification.contentFilter
     }
   }
