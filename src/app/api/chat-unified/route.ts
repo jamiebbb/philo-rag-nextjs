@@ -27,13 +27,12 @@ function extractPageFromContent(content: string): number | null {
   return null
 }
 
-// Simplified query classification - less rigid, more flexible
+// Clean 4-bucket system with clear purposes
 type QueryType = 
-  | 'catalog_browse'        // "list books", "what books do you have"
-  | 'specific_search'       // "books about X", "find documents on Y"
-  | 'direct_question'       // "what is X", "explain Y" (general knowledge)
-  | 'recommendation'        // "recommend books", "suggest reading"
-  | 'hybrid'               // Default: check knowledge base + supplement with general knowledge
+  | 'catalog'          // "Show me what you have" - browse/inventory
+  | 'search'           // "Find me content about X" - targeted search within knowledge base
+  | 'recommend'        // "Suggest something good" - curated recommendations
+  | 'ask'             // "Answer my question" - hybrid knowledge + general advice
 
 interface QueryClassification {
   type: QueryType
@@ -63,18 +62,15 @@ function enhanceMessageWithContext(message: string, chatHistory: any[] = []): st
       if (previousUserQuery && previousAssistantResponse) break
     }
     
-    // Check if previous query was asking for books from memory/database
-    const wasMemoryQuery = /\b(name|list|show|tell\s+me)\s+.*\b(books?|in\s+(?:your\s+)?memory|in\s+(?:the\s+)?(?:database|collection|library))\b/i.test(previousUserQuery)
-    const wasCatalogQuery = /\b(what|which)\s+books?\s+(?:do\s+you\s+have|are\s+available)\b/i.test(previousUserQuery)
-    
-    // Check if previous response was listing books from the knowledge base
+    // Check if previous query was catalog browsing
+    const wasCatalogQuery = /\b(list|name|show|tell\s+me|what)\s+.*\b(books?|in\s+.*memory|available)\b/i.test(previousUserQuery)
     const responseListedBooks = previousAssistantResponse.includes('here are') && 
                                (previousAssistantResponse.includes('books') || previousAssistantResponse.includes('in my knowledge base'))
     
-    if (wasMemoryQuery || wasCatalogQuery || responseListedBooks) {
-      // If asking for "more" after a memory/catalog query, continue with catalog browsing
+    if (wasCatalogQuery || responseListedBooks) {
+      // Continue catalog browsing
       if (/\b(\d+\s+)?more\b/i.test(message)) {
-        return `${message} (referring to: show me more books from my knowledge base/memory)`
+        return `${message} (referring to: show me more books from my knowledge base)`
       }
     }
     
@@ -102,63 +98,55 @@ async function classifyQuery(message: string): Promise<QueryClassification> {
     contentFilter = 'videos'
   }
 
-  // Catalog browsing patterns
-  if (/\b(all|every|complete|catalog|inventory|outline|list|show)\s+(books?|documents?|content|items)/i.test(message) ||
-      /\b(what|which)\s+(books?|documents?|content)\s+(do\s+you\s+have|are\s+available|in\s+your\s+memory)/i.test(message) ||
-      /\b(name|tell\s+me)\s+.*\s+(books?|in\s+your\s+memory)/i.test(message)) {
+  // 1. CATALOG - "Show me what you have" - browsing/inventory
+  if (/\b(all|every|complete|catalog|inventory|outline)\s+(books?|documents?|content|items)/i.test(message) ||
+      /\b(what|which)\s+(books?|documents?|content)\s+(do\s+you\s+have|are\s+available|in\s+your\s+memory|are\s+there)/i.test(message) ||
+      /\b(list|name|show|tell\s+me)\s+.*\b(books?|documents?|in\s+.*memory|in\s+.*knowledge|available)/i.test(message) ||
+      /\b(how\s+many|count)\s+(books?|documents?)/i.test(message)) {
     return {
-      type: 'catalog_browse',
+      type: 'catalog',
       confidence: 0.95,
-      reasoning: 'User wants to browse/list available content',
+      reasoning: 'User wants to browse/inventory available content',
       contentFilter
     }
   }
 
-  // Recommendation patterns
-  if (/\b(recommend|suggest|best|top|should\s+i\s+read|what\s+to\s+read|good\s+book)/i.test(message) ||
-      /\b(another\s+one|give\s+me\s+another|more\s+like|similar)\b/i.test(message)) {
+  // 2. RECOMMEND - "Suggest something good" - curated recommendations
+  if (/\b(recommend|suggest|best|top|should\s+i\s+read|what\s+to\s+read|good\s+book|give\s+me\s+a\s+book)/i.test(message) ||
+      /\b(another\s+one|give\s+me\s+another|more\s+like|similar)\b/i.test(message) ||
+      /\b(reading\s+list|book\s+for\s+me|what.*read)\b/i.test(message)) {
     return {
-      type: 'recommendation',
+      type: 'recommend',
       confidence: 0.90,
-      reasoning: 'User asking for recommendations',
+      reasoning: 'User asking for curated recommendations',
       contentFilter
     }
   }
 
-  // Specific search patterns
-  if (/\b(about|on|regarding)\s+\w+/i.test(message) ||
-      /\b(books?|documents?|content)\s+(about|on|covering|discussing)/i.test(message) ||
-      /\b(find|search|looking\s+for)\b/i.test(message)) {
+  // 3. SEARCH - "Find me content about X" - targeted search within knowledge base
+  if (/\b(about|on|regarding|covering)\s+\w+/i.test(message) ||
+      /\b(books?|documents?|content)\s+(about|on|covering|discussing|related\s+to)/i.test(message) ||
+      /\b(find|search|looking\s+for)\s+(books?|content|documents?)/i.test(message) ||
+      /\b(anything|something)\s+(about|on)\s+\w+/i.test(message)) {
     return {
-      type: 'specific_search',
+      type: 'search',
       confidence: 0.85,
-      reasoning: 'User searching for specific topics',
+      reasoning: 'User searching for specific topics within knowledge base',
       contentFilter
     }
   }
 
-  // Direct knowledge questions - ONLY for explicitly general knowledge requests
-  if (/\b(from\s+your\s+own\s+knowledge|your\s+general\s+knowledge)\b/i.test(message) &&
-      !/\b(book|document|uploaded|context|knowledge\s+base)\b/i.test(message)) {
-    return {
-      type: 'direct_question',
-      confidence: 0.85,
-      reasoning: 'User explicitly requesting general knowledge only',
-      contentFilter
-    }
-  }
-
-  // Default to hybrid for most queries - check knowledge base first, supplement with general knowledge
+  // 4. ASK - Everything else gets hybrid treatment (knowledge base + general knowledge)
   return {
-    type: 'hybrid',
+    type: 'ask',
     confidence: 0.80,
-    reasoning: 'Default hybrid approach - check knowledge base first then supplement with general knowledge',
+    reasoning: 'General question - will search knowledge base first then supplement with general knowledge',
     contentFilter
   }
 }
 
-async function handleCatalogBrowse(message: string, classification: QueryClassification, supabase: any) {
-  console.log('📚 Handling catalog browse request')
+async function handleCatalog(message: string, classification: QueryClassification, supabase: any) {
+  console.log('📚 Handling catalog browsing request')
   
   const { data: allDocs, error } = await supabase
     .from('documents_enhanced')
@@ -198,75 +186,148 @@ async function handleCatalogBrowse(message: string, classification: QueryClassif
     item.total_chunks++
   })
 
-  let allItems = Array.from(itemsMap.values())
-    .sort((a, b) => a.title.localeCompare(b.title))
-
-  // Apply content filtering
-  if (classification.contentFilter === 'books') {
-    allItems = allItems.filter(item => item.doc_type !== 'Video')
-  } else if (classification.contentFilter === 'videos') {
-    allItems = allItems.filter(item => item.doc_type === 'Video')
-  }
-
-  // Detect if this is a "more" request and determine pagination
-  const isMoreRequest = /\b(more|next|another\s+\d+|\d+\s+more)\b/i.test(message)
-  const requestedCount = message.match(/\b(\d+)\b/)?.[1] ? parseInt(message.match(/\b(\d+)\b/)![1]) : 3
+  const items = Array.from(itemsMap.values())
   
-  let startIndex = 0
-  let itemsToShow = requestedCount
+  // Filter by content type if specified
+  const filteredItems = classification.contentFilter !== 'all' 
+    ? items.filter(item => item.doc_type?.toLowerCase().includes(classification.contentFilter === 'videos' ? 'video' : 'book'))
+    : items
 
-  if (isMoreRequest) {
-    // For "more" requests, try to start from where we left off
-    // Since we can't track exact pagination, we'll show a different batch
-    startIndex = Math.floor(Math.random() * Math.max(0, allItems.length - itemsToShow))
-    console.log(`📄 "More" request detected - showing ${itemsToShow} items starting from index ${startIndex}`)
-  } else {
-    // For initial requests, show from the beginning
-    itemsToShow = Math.min(requestedCount, 20) // Cap at 20 for initial requests
-    console.log(`📄 Initial catalog request - showing first ${itemsToShow} items`)
-  }
+  // Handle pagination for "more" requests
+  const isMoreRequest = /\b(\d+\s+)?more\b/i.test(message)
+  const requestedCount = message.match(/\b(\d+)\s+(books?|items?|more)\b/i)?.[1]
+  const count = requestedCount ? parseInt(requestedCount) : (isMoreRequest ? 5 : 10)
+  
+  const startIndex = isMoreRequest ? Math.min(10, filteredItems.length) : 0
+  const endIndex = Math.min(startIndex + count, filteredItems.length)
+  const displayItems = filteredItems.slice(startIndex, endIndex)
+  const remainingCount = Math.max(0, filteredItems.length - endIndex)
 
-  const selectedItems = allItems.slice(startIndex, startIndex + itemsToShow)
-  const remainingCount = Math.max(0, allItems.length - (startIndex + itemsToShow))
+  const contextForAI = `CATALOG INVENTORY (${filteredItems.length} total items, showing ${displayItems.length}):
 
-  const contextForAI = `AVAILABLE ${classification.contentFilter?.toUpperCase() || 'CONTENT'} 
+${displayItems.map((item, i) => 
+  `${startIndex + i + 1}. "${item.title}" by ${item.author}
+   Type: ${item.doc_type} | Genre: ${item.genre || 'N/A'} | Topic: ${item.topic || 'N/A'}
+   Difficulty: ${item.difficulty || 'N/A'} | Chunks: ${item.total_chunks}
+   Summary: ${item.summary || 'No summary available'}`
+).join('\n\n')}
 
-${isMoreRequest ? 
-  `Here are ${selectedItems.length} more ${classification.contentFilter || 'items'} from my knowledge base (${remainingCount} still remaining):` :
-  `I have ${allItems.length} ${classification.contentFilter || 'items'} in my knowledge base. Here are ${selectedItems.length}:`
-}
+${remainingCount > 0 ? `\n(${remainingCount} more items available - user can ask for "more" to see additional items)` : ''}
 
-${selectedItems.map((item, i) => 
-    `${startIndex + i + 1}. "${item.title}" by ${item.author}
-     Type: ${item.doc_type} | Genre: ${item.genre || 'N/A'} | Topic: ${item.topic || 'N/A'}
-     Summary: ${item.summary || 'No summary available'}`
-  ).join('\n\n')}
-
-${remainingCount > 0 ? `\n📚 I have ${remainingCount} more ${classification.contentFilter || 'items'} available. Ask "give me ${Math.min(remainingCount, requestedCount)} more" to see additional items.` : '\n✅ That\'s all the items in my knowledge base.'}
-
-Present this as a clear, numbered list. ${isMoreRequest ? 'Make it clear these are additional items.' : 'Mention the total count and that more are available if requested.'}`
+Statistics:
+- Total unique items: ${filteredItems.length}
+- Books: ${items.filter(i => i.doc_type?.toLowerCase().includes('book')).length}
+- Videos: ${items.filter(i => i.doc_type?.toLowerCase().includes('video')).length}
+- Other: ${items.filter(i => !i.doc_type?.toLowerCase().includes('book') && !i.doc_type?.toLowerCase().includes('video')).length}`
 
   return {
     contextForAI,
-    sources: selectedItems.slice(0, 5).map(item => ({
+    sources: displayItems.map(item => ({
       title: item.title,
       author: item.author,
       doc_type: item.doc_type,
-      content: item.content_chunks[0]?.substring(0, 300) || ''
+      genre: item.genre,
+      topic: item.topic,
+      difficulty: item.difficulty,
+      similarity: 1.0,
+      content: item.summary || `${item.doc_type} by ${item.author}`
     })),
     metadata: {
-      totalItems: allItems.length,
-      shownItems: selectedItems.length,
-      startIndex,
+      responseType: 'catalog',
+      totalItems: filteredItems.length,
+      displayedItems: displayItems.length,
       remainingItems: remainingCount,
-      isMoreRequest,
-      contentFilter: classification.contentFilter
-    }
+      startIndex,
+      hasMore: remainingCount > 0
+    },
+    directResponse: null // Will be generated by main handler
   }
 }
 
-async function handleRecommendation(message: string, classification: QueryClassification, supabase: any) {
+async function handleSearch(message: string, classification: QueryClassification, supabase: any) {
+  console.log('🔍 Handling targeted search within knowledge base')
+  
+  // Use vector search to find relevant content
+  const queryEmbedding = await generateEmbedding(message)
+  
+  const { data: vectorResults, error: vectorError } = await supabase.rpc(
+    'match_documents_enhanced',
+    {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.3,
+      match_count: 12
+    }
+  )
+
+  let sources: any[] = []
+  let contextForAI = ''
+
+  if (!vectorError && vectorResults && vectorResults.length > 0) {
+    // Deduplicate and enhance sources
+    const sourcesMap = new Map()
+    
+    vectorResults.forEach((doc: any) => {
+      if (!doc.title) return
+
+      const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
+      
+      if (!sourcesMap.has(bookKey) || (doc.similarity > (sourcesMap.get(bookKey)?.similarity || 0))) {
+        sourcesMap.set(bookKey, {
+          title: doc.title,
+          author: doc.author || 'Unknown Author',
+          content: doc.content || '',
+          doc_type: doc.doc_type,
+          similarity: doc.similarity,
+          page_number: extractPageFromContent(doc.content)
+        })
+      }
+    })
+
+    sources = Array.from(sourcesMap.values())
+      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .slice(0, 8)
+
+    contextForAI = `SEARCH RESULTS FOR: "${message}"
+Found ${sources.length} relevant sources:
+
+${sources.map((doc: any, i: number) => 
+  `SOURCE ${i + 1}: "${doc.title}" by ${doc.author} (Relevance: ${Math.round((doc.similarity || 0) * 100)}%)
+Content: ${doc.content}`
+).join('\n\n')}`
+  } else {
+    contextForAI = `No relevant content found in knowledge base for: "${message}"`
+  }
+
+  return {
+    contextForAI,
+    sources,
+    metadata: {
+      responseType: 'search',
+      searchQuery: message,
+      sourcesFound: sources.length,
+      avgRelevance: sources.length > 0 ? Math.round(sources.reduce((sum, s) => sum + (s.similarity || 0), 0) / sources.length * 100) : 0
+    },
+    directResponse: null // Will be generated by main handler
+  }
+}
+
+async function handleRecommend(message: string, classification: QueryClassification, supabase: any, chatHistory: any[] = []) {
   console.log('🎯 Handling recommendation request')
+  
+  // Extract previously recommended books from chat history
+  const previouslyRecommended = new Set<string>()
+  chatHistory.forEach((item: any) => {
+    if (item.role === 'assistant' && item.sources) {
+      item.sources.forEach((source: any) => {
+        if (source.title && source.author) {
+          const bookKey = `${source.title.toLowerCase()}-${(source.author || 'unknown').toLowerCase()}`
+          previouslyRecommended.add(bookKey)
+        }
+      })
+    }
+  })
+  
+  console.log('📚 Previously recommended books:', previouslyRecommended.size)
   
   // Get available content for recommendations via vector search for better relevance
   const queryEmbedding = await generateEmbedding(message)
@@ -276,7 +337,7 @@ async function handleRecommendation(message: string, classification: QueryClassi
     {
       query_embedding: queryEmbedding,
       match_threshold: 0.1, // Lower threshold for recommendations
-      match_count: 15
+      match_count: 25 // Increase count to have more options for filtering
     }
   )
 
@@ -291,6 +352,12 @@ async function handleRecommendation(message: string, classification: QueryClassi
       if (!doc.title) return
 
       const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
+      
+      // Skip if this book was already recommended
+      if (previouslyRecommended.has(bookKey)) {
+        console.log('⏭️ Skipping previously recommended book:', doc.title)
+        return
+      }
       
       if (!booksMap.has(bookKey)) {
         booksMap.set(bookKey, {
@@ -324,9 +391,15 @@ ${sources.map((book, i) =>
     contextForAI = 'No books found in my knowledge base for this query.'
   }
 
+  // Enhanced system prompt for follow-up recommendations
+  const isFollowUpRequest = /\b(another\s+one|give\s+me\s+another|more|next|different|other)\b/i.test(message)
+  const followUpNote = isFollowUpRequest ? 
+    `\n\nIMPORTANT: This is a follow-up request for additional recommendations. The books listed above are NEW options that haven't been recommended before. Focus on these fresh recommendations and avoid repeating any previous suggestions.` : 
+    ''
+
   const systemPrompt = `You are a knowledgeable book advisor with access to a personal library.
 
-${contextForAI}
+${contextForAI}${followUpNote}
 
 INSTRUCTIONS:
 1. First recommend the most relevant books from my knowledge base above (if any)
@@ -334,7 +407,7 @@ INSTRUCTIONS:
 3. Include specific details about the books (genre, difficulty, key topics)
 4. Then provide 2-3 additional general recommendations if helpful
 5. Be clear about which recommendations come from my knowledge base vs general knowledge
-6. If this appears to be a follow-up request ("another one"), provide different recommendations
+6. ${isFollowUpRequest ? 'Since this is a follow-up request, provide DIFFERENT books than any previous recommendations' : 'Provide your best recommendations for this request'}
 
 User Request: ${message}`
 
@@ -353,17 +426,19 @@ User Request: ${message}`
     contextForAI,
     sources,
     metadata: {
-      responseType: 'recommendation',
+      responseType: 'recommend',
       knowledgeBaseBooks: sources.length,
       avgRelevance: sources.length > 0 ? Math.round(sources.reduce((sum, s) => sum + (s.similarity || 0), 0) / sources.length * 100) : 0,
-      combinesAvailableAndGeneral: true
+      combinesAvailableAndGeneral: true,
+      excludedPreviouslyRecommended: previouslyRecommended.size,
+      isFollowUpRequest
     },
     directResponse: finalResponse
   }
 }
 
-async function handleHybridQuery(message: string, classification: QueryClassification, supabase: any) {
-  console.log('🔄 Handling hybrid query (knowledge base + general knowledge)')
+async function handleAsk(message: string, classification: QueryClassification, supabase: any) {
+  console.log('💬 Handling general question with hybrid approach')
   
   // Search for relevant context first
   const queryEmbedding = await generateEmbedding(message)
@@ -442,36 +517,13 @@ User Question: ${message}`
     contextForAI: contextFromKnowledgeBase || 'No relevant knowledge base content found',
     sources,
     metadata: {
-      responseType: 'hybrid',
+      responseType: 'ask',
       hasKnowledgeBaseContent: contextFromKnowledgeBase.length > 0,
       combinesRetrievedAndGeneral: true,
       sourcesCount: sources.length,
       avgRelevance: sources.length > 0 ? Math.round(sources.reduce((sum, s) => sum + (s.similarity || 0), 0) / sources.length * 100) : 0
     },
     directResponse: finalResponse
-  }
-}
-
-async function handleDirectQuestion(message: string) {
-  console.log('💭 Handling direct knowledge question')
-  
-  const systemPrompt = `You are a helpful assistant providing advice based on general knowledge. The user has specifically asked for general advice/knowledge.
-
-User Question: ${message}`
-
-  const response = await generateChatCompletion([
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: message }
-  ])
-
-  return {
-    contextForAI: 'Direct knowledge response (no knowledge base search)',
-    sources: [],
-    metadata: {
-      responseType: 'direct_knowledge',
-      usedKnowledgeBase: false
-    },
-    directResponse: response
   }
 }
 
@@ -503,29 +555,30 @@ export async function POST(request: NextRequest) {
     const queryToUse = enhancedMessage !== message ? enhancedMessage : message
     
     switch (classification.type) {
-      case 'catalog_browse':
-        result = await handleCatalogBrowse(queryToUse, classification, supabase)
+      case 'catalog':
+        result = await handleCatalog(queryToUse, classification, supabase)
         response = await generateChatCompletion([
-          { role: 'system', content: `You are a helpful assistant. ${result.contextForAI}\n\nProvide a clear response based on the content above.` },
+          { role: 'system', content: `You are a helpful librarian. ${result.contextForAI}\n\nProvide a clear, organized response showing the available content. Include totals and mention if there are more items available.` },
           { role: 'user', content: queryToUse }
         ])
         break
 
-      case 'recommendation':
-        result = await handleRecommendation(queryToUse, classification, supabase)
+      case 'search':
+        result = await handleSearch(queryToUse, classification, supabase)
+        response = await generateChatCompletion([
+          { role: 'system', content: `You are a research assistant. ${result.contextForAI}\n\nSummarize the findings and cite specific sources. If no content found, suggest related searches or recommendations.` },
+          { role: 'user', content: queryToUse }
+        ])
+        break
+
+      case 'recommend':
+        result = await handleRecommend(queryToUse, classification, supabase, chatHistory)
         response = result.directResponse
         break
 
-      case 'direct_question':
-        result = await handleDirectQuestion(queryToUse)
-        response = result.directResponse
-        break
-
-      case 'specific_search':
-      case 'hybrid':
+      case 'ask':
       default:
-        // Default to hybrid approach
-        result = await handleHybridQuery(queryToUse, classification, supabase)
+        result = await handleAsk(queryToUse, classification, supabase)
         response = result.directResponse
         break
     }
@@ -542,7 +595,7 @@ export async function POST(request: NextRequest) {
         ...result.metadata
       },
       classification,
-      method: 'simplified_unified_routing'
+      method: 'clean_4_bucket_system'
     })
 
   } catch (error) {
