@@ -251,34 +251,53 @@ async function handleSearch(message: string, classification: QueryClassification
   let contextForAI = ''
 
   try {
-    // Enhanced metadata-aware search for topics
-    const queryLower = message.toLowerCase()
-    
-    // Extract search terms
-    const topicKeywords = ['coaching', 'leadership', 'management', 'ceo', 'executive', 'business', 'strategy', 'finance', 'investment', 'marketing', 'philosophy', 'psychology', 'hr', 'hiring', 'firing', 'performance', 'meetings', 'negotiation', 'sales']
-    const matchedTopics = topicKeywords.filter(topic => queryLower.includes(topic))
-    
-    console.log('🔍 Extracted search topics:', matchedTopics)
+    // AI-POWERED DYNAMIC SEARCH ANALYSIS
+    const analysis = await analyzeQueryForMetadata(message)
+    console.log('🧠 AI Search Analysis:', analysis)
     
     let allCandidates: any[] = []
     
-    // Step 1: Direct metadata matching for search terms
-    if (matchedTopics.length > 0) {
-      for (const topic of matchedTopics) {
-        console.log(`📚 Metadata search for: "${topic}"`)
+    // Step 1: Entity-focused search (people, companies, concepts)
+    if (analysis.entities && analysis.entities.length > 0) {
+      for (const entity of analysis.entities) {
+        console.log(`🏢 Entity search: "${entity}"`)
+        
+        const { data: entityDocs } = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .or(`title.ilike.%${entity}%,author.ilike.%${entity}%,tags.ilike.%${entity}%,summary.ilike.%${entity}%,content.ilike.%${entity}%`)
+          .limit(8)
+        
+        if (entityDocs && entityDocs.length > 0) {
+          const scoredDocs = entityDocs.map((doc: any) => ({
+            ...doc,
+            search_score: calculateEntityRelevance(doc, entity, message),
+            match_reason: `Entity: ${entity}`,
+            search_type: 'entity'
+          }))
+          allCandidates.push(...scoredDocs)
+          console.log(`✅ Found ${entityDocs.length} docs for entity "${entity}"`)
+        }
+      }
+    }
+    
+    // Step 2: Topic-focused search (dynamic topics from AI analysis)
+    if (analysis.topics && analysis.topics.length > 0) {
+      for (const topic of analysis.topics) {
+        console.log(`📚 Topic search: "${topic}"`)
         
         const { data: topicDocs } = await supabase
           .from('documents_enhanced')
           .select('*')
           .or(`topic.ilike.%${topic}%,genre.ilike.%${topic}%,tags.ilike.%${topic}%,title.ilike.%${topic}%,summary.ilike.%${topic}%`)
-          .limit(10)
+          .limit(8)
         
         if (topicDocs && topicDocs.length > 0) {
           const scoredDocs = topicDocs.map((doc: any) => ({
             ...doc,
-            search_score: calculateSearchRelevance(doc, topic, message),
-            match_reason: `Topic/Metadata match: ${topic}`,
-            search_type: 'metadata'
+            search_score: calculateTopicRelevance(doc, topic, message, analysis),
+            match_reason: `Topic: ${topic}`,
+            search_type: 'topic'
           }))
           allCandidates.push(...scoredDocs)
           console.log(`✅ Found ${topicDocs.length} docs for topic "${topic}"`)
@@ -286,27 +305,56 @@ async function handleSearch(message: string, classification: QueryClassification
       }
     }
     
-    // Step 2: Keyword search in title/author
-    const searchWords = message.toLowerCase().replace(/[^\w\s]/g, '').split(' ').filter(w => w.length > 2)
-    for (const word of searchWords) {
-      const { data: keywordDocs } = await supabase
-        .from('documents_enhanced')
-        .select('*')
-        .or(`title.ilike.%${word}%,author.ilike.%${word}%,summary.ilike.%${word}%`)
-        .limit(6)
-      
-      if (keywordDocs && keywordDocs.length > 0) {
-        const scoredDocs = keywordDocs.map((doc: any) => ({
-          ...doc,
-          search_score: calculateKeywordRelevance(doc, word, message),
-          match_reason: `Keyword match: ${word}`,
-          search_type: 'keyword'
-        }))
-        allCandidates.push(...scoredDocs)
+    // Step 3: Genre/document type search
+    if (analysis.genres && analysis.genres.length > 0) {
+      for (const genre of analysis.genres) {
+        const { data: genreDocs } = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .or(`genre.ilike.%${genre}%,doc_type.ilike.%${genre}%`)
+          .limit(6)
+        
+        if (genreDocs && genreDocs.length > 0) {
+          const scoredDocs = genreDocs.map((doc: any) => ({
+            ...doc,
+            search_score: calculateGenreRelevance(doc, genre, analysis),
+            match_reason: `Genre: ${genre}`,
+            search_type: 'genre'
+          }))
+          allCandidates.push(...scoredDocs)
+        }
       }
     }
     
-    // Step 3: Vector search for semantic matching
+    // Step 4: Full-text search as comprehensive backup
+    const searchTerms = [
+      ...(analysis.entities || []), 
+      ...(analysis.topics || []), 
+      ...(analysis.genres || [])
+    ].filter(term => term.length > 2)
+    
+    if (searchTerms.length > 0) {
+      const searchQuery = searchTerms.join(' | ') // OR search
+      
+      const { data: fullTextDocs } = await supabase
+        .from('documents_enhanced')
+        .select('*')
+        .textSearch('title,summary,tags,topic,genre,content', searchQuery)
+        .limit(12)
+      
+      if (fullTextDocs && fullTextDocs.length > 0) {
+        const scoredDocs = fullTextDocs.map((doc: any) => ({
+          ...doc,
+          search_score: calculateFullTextRelevance(doc, searchTerms, message),
+          match_reason: `Full-text search`,
+          search_type: 'fulltext'
+        }))
+        allCandidates.push(...scoredDocs)
+        console.log(`✅ Full-text search found ${fullTextDocs.length} additional docs`)
+      }
+    }
+    
+    // Step 5: Vector search for semantic understanding
     const queryEmbedding = await generateEmbedding(message)
     const { data: vectorResults, error: vectorError } = await supabase.rpc(
       'match_documents_enhanced',
@@ -321,13 +369,13 @@ async function handleSearch(message: string, classification: QueryClassification
       const vectorDocs = vectorResults.map((doc: any) => ({
         ...doc,
         search_score: doc.similarity || 0.5,
-        match_reason: `Semantic similarity: ${Math.round((doc.similarity || 0) * 100)}%`,
+        match_reason: `Semantic: ${Math.round((doc.similarity || 0) * 100)}%`,
         search_type: 'vector'
       }))
       allCandidates.push(...vectorDocs)
     }
     
-    // Step 4: Deduplicate and rank results
+    // Step 6: Advanced deduplication and ranking
     const sourcesMap = new Map()
     
     allCandidates.forEach((doc: any) => {
@@ -335,8 +383,19 @@ async function handleSearch(message: string, classification: QueryClassification
 
       const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
       
-      // Keep the highest scoring version
-      if (!sourcesMap.has(bookKey) || (doc.search_score > (sourcesMap.get(bookKey)?.search_score || 0))) {
+      // Combine scores for multi-match documents
+      if (sourcesMap.has(bookKey)) {
+        const existing = sourcesMap.get(bookKey)
+        const combinedScore = Math.max(existing.search_score, doc.search_score) * 1.15 // Boost for multiple matches
+        const combinedReason = `${existing.match_reason} + ${doc.match_reason}`
+        
+        sourcesMap.set(bookKey, {
+          ...existing,
+          search_score: Math.min(1.0, combinedScore),
+          match_reason: combinedReason,
+          search_type: 'multi_match'
+        })
+      } else {
         sourcesMap.set(bookKey, {
           title: doc.title,
           author: doc.author || 'Unknown Author',
@@ -357,9 +416,13 @@ async function handleSearch(message: string, classification: QueryClassification
 
     sources = Array.from(sourcesMap.values())
       .sort((a, b) => {
-        // Prioritize metadata matches, then by score
-        if (a.search_type === 'metadata' && b.search_type !== 'metadata') return -1
-        if (b.search_type === 'metadata' && a.search_type !== 'metadata') return 1
+        // Prioritize multi-matches and entity/topic matches
+        const aPriority = a.search_type === 'multi_match' ? 3 : 
+                         (a.search_type === 'entity' || a.search_type === 'topic') ? 2 : 1
+        const bPriority = b.search_type === 'multi_match' ? 3 : 
+                         (b.search_type === 'entity' || b.search_type === 'topic') ? 2 : 1
+        
+        if (aPriority !== bPriority) return bPriority - aPriority
         return (b.similarity || 0) - (a.similarity || 0)
       })
       .slice(0, 10)
@@ -370,7 +433,9 @@ async function handleSearch(message: string, classification: QueryClassification
     })
 
     contextForAI = `SEARCH RESULTS FOR: "${message}"
-Found ${sources.length} relevant sources using metadata + semantic search:
+Found ${sources.length} relevant sources using AI-powered analysis:
+
+AI Analysis: ${JSON.stringify(analysis, null, 2)}
 
 ${sources.map((doc: any, i: number) => 
   `SOURCE ${i + 1}: "${doc.title}" by ${doc.author} (${doc.match_reason})
@@ -380,8 +445,8 @@ Content: ${doc.content}`
 ).join('\n\n')}`
 
   } catch (error) {
-    console.error('❌ Error in enhanced search:', error)
-    contextForAI = `Error occurred during search for: "${message}"`
+    console.error('❌ Error in AI-powered search:', error)
+    contextForAI = `Error occurred during intelligent search for: "${message}"`
   }
 
   return {
@@ -453,6 +518,115 @@ function calculateKeywordRelevance(doc: any, keyword: string, query: string): nu
   return Math.min(1.0, score)
 }
 
+// Relevance calculation functions for AI-powered search
+function calculateEntityRelevance(doc: any, entity: string, query: string): number {
+  let score = 0.5
+  const entityLower = entity.toLowerCase()
+  
+  // Higher score for exact matches in important fields
+  if (doc.title?.toLowerCase().includes(entityLower)) score += 0.3
+  if (doc.author?.toLowerCase().includes(entityLower)) score += 0.25  
+  if (doc.tags?.toLowerCase().includes(entityLower)) score += 0.2
+  if (doc.summary?.toLowerCase().includes(entityLower)) score += 0.15
+  
+  return Math.min(1.0, score)
+}
+
+function calculateTopicRelevance(doc: any, topic: string, query: string, analysis: any): number {
+  let score = 0.5
+  const topicLower = topic.toLowerCase()
+  
+  // Higher score for exact topic matches
+  if (doc.topic?.toLowerCase().includes(topicLower)) score += 0.3
+  if (doc.genre?.toLowerCase().includes(topicLower)) score += 0.25
+  if (doc.title?.toLowerCase().includes(topicLower)) score += 0.2
+  if (doc.tags?.toLowerCase().includes(topicLower)) score += 0.15
+  if (doc.summary?.toLowerCase().includes(topicLower)) score += 0.1
+  
+  return Math.min(1.0, score)
+}
+
+function calculateGenreRelevance(doc: any, genre: string, analysis: any): number {
+  let score = 0.6
+  const genreLower = genre.toLowerCase()
+  
+  // Direct genre/doc_type matches
+  if (doc.genre?.toLowerCase().includes(genreLower)) score += 0.3
+  if (doc.doc_type?.toLowerCase().includes(genreLower)) score += 0.25
+  
+  return Math.min(1.0, score)
+}
+
+function calculateFullTextRelevance(doc: any, searchTerms: string[], query: string): number {
+  let score = 0.4
+  const docText = `${doc.title} ${doc.summary} ${doc.tags} ${doc.topic} ${doc.genre}`.toLowerCase()
+  
+  // Score based on how many search terms are found
+  const foundTerms = searchTerms.filter(term => docText.includes(term.toLowerCase()))
+  score += (foundTerms.length / searchTerms.length) * 0.4
+  
+  return Math.min(1.0, score)
+}
+
+// Helper function for AI-powered query analysis
+async function analyzeQueryForMetadata(query: string): Promise<{
+  entities: string[]
+  topics: string[]
+  document_types: string[]
+  difficulty_preference: string
+  genres: string[]
+  search_intent: string
+  search_strategy: string
+}> {
+  const analysisPrompt = `Analyze this query to extract search criteria for a business/philosophy knowledge base:
+
+Query: "${query}"
+
+Extract the following if present:
+1. ENTITIES: People names, company names, specific concepts
+2. TOPICS: Subject areas, domains, themes (any topic, not limited to predefined list)
+3. DOCUMENT_TYPES: Books, articles, reports, videos, etc.
+4. DIFFICULTY: Beginner, intermediate, advanced, expert level preference
+5. GENRES: Any relevant genres or categories
+6. INTENT: What type of information is being sought
+
+Respond in JSON format:
+{
+  "entities": ["list of specific names/companies/concepts"],
+  "topics": ["list of subject areas - extract ANY topics mentioned"], 
+  "document_types": ["preferred document types"],
+  "difficulty_preference": "beginner|intermediate|advanced|expert|any",
+  "genres": ["relevant genres"],
+  "search_intent": "recommendation|search|factual|analytical",
+  "search_strategy": "entity_focused|topic_focused|broad_exploration"
+}`
+
+  try {
+    const response = await generateChatCompletion([
+      { role: 'system', content: analysisPrompt },
+      { role: 'user', content: query }
+    ])
+    
+    const analysis = JSON.parse(response)
+    console.log('🧠 AI Query Analysis:', analysis)
+    return analysis
+    
+  } catch (error) {
+    console.warn('Query analysis failed, using fallback:', error)
+    // Fallback: extract words as potential topics
+    const words = query.toLowerCase().replace(/[^\w\s]/g, '').split(' ').filter(w => w.length > 3)
+    return {
+      entities: [],
+      topics: words,
+      document_types: [],
+      difficulty_preference: "any",
+      genres: [],
+      search_intent: "factual",
+      search_strategy: "broad_exploration"
+    }
+  }
+}
+
 async function handleRecommend(message: string, classification: QueryClassification, supabase: any, chatHistory: any[] = []) {
   console.log('🎯 Handling recommendation request')
   
@@ -471,31 +645,44 @@ async function handleRecommend(message: string, classification: QueryClassificat
   
   console.log('📚 Previously recommended books:', previouslyRecommended.size)
   
-  // ENHANCED METADATA-AWARE SEARCH
+  // AI-POWERED DYNAMIC METADATA SEARCH
   let sources: any[] = []
   let contextForAI = ''
 
   try {
-    // Step 1: Extract key terms for metadata matching
-    const queryLower = message.toLowerCase()
+    // Step 1: Use AI to analyze the query and extract search criteria
+    const analysis = await analyzeQueryForMetadata(message)
     
-    // Extract key topics and entities from the query
-    const topicKeywords = ['coaching', 'leadership', 'management', 'ceo', 'executive', 'business', 'strategy', 'finance', 'investment', 'marketing', 'philosophy', 'psychology', 'hr', 'hiring', 'firing', 'performance']
-    const difficultyKeywords = ['beginner', 'basic', 'intro', 'advanced', 'expert', 'intermediate']
-    
-    const matchedTopics = topicKeywords.filter(topic => queryLower.includes(topic))
-    const matchedDifficulty = difficultyKeywords.find(diff => queryLower.includes(diff))
-    
-    console.log('🔍 Extracted topics:', matchedTopics)
-    console.log('📊 Difficulty preference:', matchedDifficulty)
-    
-    // Step 2: Multi-layered search approach
     let allCandidates: any[] = []
     
-    // A. Direct metadata matching (highest priority)
-    if (matchedTopics.length > 0) {
-      for (const topic of matchedTopics) {
-        console.log(`📚 Metadata search for topic: "${topic}"`)
+    // Step 2: Entity-focused search (people, companies, concepts)
+    if (analysis.entities && analysis.entities.length > 0) {
+      for (const entity of analysis.entities) {
+        console.log(`🏢 Entity search: "${entity}"`)
+        
+        const { data: entityDocs } = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .or(`title.ilike.%${entity}%,author.ilike.%${entity}%,tags.ilike.%${entity}%,summary.ilike.%${entity}%`)
+          .limit(8)
+        
+        if (entityDocs && entityDocs.length > 0) {
+          const scoredDocs = entityDocs.map((doc: any) => ({
+            ...doc,
+            metadata_score: calculateEntityRelevance(doc, entity, message),
+            match_reason: `Entity match: ${entity}`,
+            search_type: 'entity'
+          }))
+          allCandidates.push(...scoredDocs)
+          console.log(`✅ Found ${entityDocs.length} docs for entity "${entity}"`)
+        }
+      }
+    }
+    
+    // Step 3: Topic-focused search (dynamic topics from AI analysis)
+    if (analysis.topics && analysis.topics.length > 0) {
+      for (const topic of analysis.topics) {
+        console.log(`📚 Topic search: "${topic}"`)
         
         const { data: topicDocs } = await supabase
           .from('documents_enhanced')
@@ -506,9 +693,9 @@ async function handleRecommend(message: string, classification: QueryClassificat
         if (topicDocs && topicDocs.length > 0) {
           const scoredDocs = topicDocs.map((doc: any) => ({
             ...doc,
-            metadata_score: calculateMetadataRelevance(doc, topic, message, matchedDifficulty),
+            metadata_score: calculateTopicRelevance(doc, topic, message, analysis),
             match_reason: `Topic match: ${topic}`,
-            search_type: 'metadata'
+            search_type: 'topic'
           }))
           allCandidates.push(...scoredDocs)
           console.log(`✅ Found ${topicDocs.length} docs for topic "${topic}"`)
@@ -516,48 +703,81 @@ async function handleRecommend(message: string, classification: QueryClassificat
       }
     }
     
-    // B. Title and author fuzzy matching
-    const keyWords = message.toLowerCase().replace(/[^\w\s]/g, '').split(' ').filter(w => w.length > 2)
-    for (const word of keyWords) {
-      const { data: titleDocs } = await supabase
+    // Step 4: Genre/document type filtering
+    if (analysis.genres && analysis.genres.length > 0) {
+      for (const genre of analysis.genres) {
+        const { data: genreDocs } = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .or(`genre.ilike.%${genre}%,doc_type.ilike.%${genre}%`)
+          .limit(5)
+        
+        if (genreDocs && genreDocs.length > 0) {
+          const scoredDocs = genreDocs.map((doc: any) => ({
+            ...doc,
+            metadata_score: calculateGenreRelevance(doc, genre, analysis),
+            match_reason: `Genre match: ${genre}`,
+            search_type: 'genre'
+          }))
+          allCandidates.push(...scoredDocs)
+        }
+      }
+    }
+    
+    // Step 5: Full-text search as backup for any missed terms
+    const searchTerms = [
+      ...(analysis.entities || []), 
+      ...(analysis.topics || []), 
+      ...(analysis.genres || [])
+    ].filter(term => term.length > 2)
+    
+    if (searchTerms.length > 0) {
+      // Use PostgreSQL full-text search
+      const searchQuery = searchTerms.join(' | ') // OR search
+      
+      const { data: fullTextDocs } = await supabase
         .from('documents_enhanced')
         .select('*')
-        .or(`title.ilike.%${word}%,author.ilike.%${word}%`)
-        .limit(5)
+        .textSearch('title,summary,tags,topic,genre', searchQuery)
+        .limit(10)
       
-      if (titleDocs && titleDocs.length > 0) {
-        const scoredDocs = titleDocs.map((doc: any) => ({
+      if (fullTextDocs && fullTextDocs.length > 0) {
+        const scoredDocs = fullTextDocs.map((doc: any) => ({
           ...doc,
-          metadata_score: calculateTitleRelevance(doc, word, message),
-          match_reason: `Title/Author match: ${word}`,
-          search_type: 'title'
+          metadata_score: calculateFullTextRelevance(doc, searchTerms, message),
+          match_reason: `Full-text search`,
+          search_type: 'fulltext'
         }))
         allCandidates.push(...scoredDocs)
+        console.log(`✅ Full-text search found ${fullTextDocs.length} additional docs`)
       }
     }
     
-    // C. Vector search as fallback/supplement
-    const queryEmbedding = await generateEmbedding(message)
-    const { data: vectorResults, error: vectorError } = await supabase.rpc(
-      'match_documents_enhanced',
-      {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.1,
-        match_count: 15
+    // Step 6: Vector search as semantic fallback
+    if (allCandidates.length < 5) {
+      console.log('🔍 Adding semantic vector search for broader coverage')
+      const queryEmbedding = await generateEmbedding(message)
+      const { data: vectorResults, error: vectorError } = await supabase.rpc(
+        'match_documents_enhanced',
+        {
+          query_embedding: queryEmbedding,
+          match_threshold: 0.1,
+          match_count: 15
+        }
+      )
+      
+      if (!vectorError && vectorResults && vectorResults.length > 0) {
+        const vectorDocs = vectorResults.map((doc: any) => ({
+          ...doc,
+          metadata_score: doc.similarity || 0.5,
+          match_reason: `Semantic similarity: ${Math.round((doc.similarity || 0) * 100)}%`,
+          search_type: 'vector'
+        }))
+        allCandidates.push(...vectorDocs)
       }
-    )
-    
-    if (!vectorError && vectorResults && vectorResults.length > 0) {
-      const vectorDocs = vectorResults.map((doc: any) => ({
-        ...doc,
-        metadata_score: doc.similarity || 0.5,
-        match_reason: `Vector similarity: ${Math.round((doc.similarity || 0) * 100)}%`,
-        search_type: 'vector'
-      }))
-      allCandidates.push(...vectorDocs)
     }
     
-    // Step 3: Deduplicate and score books
+    // Step 7: Advanced deduplication and ranking
     const booksMap = new Map()
     
     allCandidates.forEach((doc: any) => {
@@ -571,8 +791,19 @@ async function handleRecommend(message: string, classification: QueryClassificat
         return
       }
       
-      // Keep the highest scoring version of each book
-      if (!booksMap.has(bookKey) || (doc.metadata_score > (booksMap.get(bookKey)?.metadata_score || 0))) {
+      // Combine scores for multi-match documents
+      if (booksMap.has(bookKey)) {
+        const existing = booksMap.get(bookKey)
+        const combinedScore = Math.max(existing.metadata_score, doc.metadata_score) * 1.15 // Boost for multiple matches
+        const combinedReason = `${existing.match_reason} + ${doc.match_reason}`
+        
+        booksMap.set(bookKey, {
+          ...existing,
+          metadata_score: Math.min(1.0, combinedScore),
+          match_reason: combinedReason,
+          search_type: 'multi_match'
+        })
+      } else {
         booksMap.set(bookKey, {
           title: doc.title,
           author: doc.author || 'Unknown Author',
@@ -591,14 +822,16 @@ async function handleRecommend(message: string, classification: QueryClassificat
       }
     })
 
-    // Step 4: Rank and select best recommendations
+    // Step 8: Smart ranking that prioritizes metadata matches
     sources = Array.from(booksMap.values())
       .sort((a, b) => {
-        // Prioritize metadata matches over vector matches
-        if (a.search_type === 'metadata' && b.search_type !== 'metadata') return -1
-        if (b.search_type === 'metadata' && a.search_type !== 'metadata') return 1
+        // Prioritize multi-matches and entity/topic matches
+        const aPriority = a.search_type === 'multi_match' ? 3 : 
+                         (a.search_type === 'entity' || a.search_type === 'topic') ? 2 : 1
+        const bPriority = b.search_type === 'multi_match' ? 3 : 
+                         (b.search_type === 'entity' || b.search_type === 'topic') ? 2 : 1
         
-        // Then by score
+        if (aPriority !== bPriority) return bPriority - aPriority
         return (b.similarity || 0) - (a.similarity || 0)
       })
       .slice(0, 8)
@@ -608,7 +841,9 @@ async function handleRecommend(message: string, classification: QueryClassificat
       console.log(`${i+1}. "${book.title}" - ${book.match_reason} (${Math.round((book.similarity || 0) * 100)}%)`)
     })
 
-    contextForAI = `BOOKS AVAILABLE FOR RECOMMENDATIONS (${sources.length} books found using metadata + vector search):
+    contextForAI = `BOOKS AVAILABLE FOR RECOMMENDATIONS (${sources.length} books found using AI-powered metadata analysis):
+
+AI Analysis: ${JSON.stringify(analysis, null, 2)}
 
 ${sources.map((book, i) => 
   `${i + 1}. "${book.title}" by ${book.author} (${book.match_reason})
@@ -619,8 +854,8 @@ ${sources.map((book, i) =>
 ).join('\n\n')}`
 
   } catch (error) {
-    console.error('❌ Error in enhanced recommendation search:', error)
-    contextForAI = 'Error occurred during book search.'
+    console.error('❌ Error in AI-powered recommendation search:', error)
+    contextForAI = 'Error occurred during intelligent book search.'
   }
 
   // Enhanced system prompt for follow-up recommendations
@@ -629,13 +864,13 @@ ${sources.map((book, i) =>
     `\n\nIMPORTANT: This is a follow-up request for additional recommendations. The books listed above are NEW options that haven't been recommended before. Focus on these fresh recommendations and avoid repeating any previous suggestions.` : 
     ''
 
-  const systemPrompt = `You are a knowledgeable book advisor with access to a personal library. I use advanced metadata-aware search that matches books based on title, topic, genre, tags, and content relevance.
+  const systemPrompt = `You are a knowledgeable book advisor with access to a personal library. I use advanced AI-powered search that dynamically analyzes queries to find the most relevant books based on entities, topics, genres, and semantic meaning.
 
 ${contextForAI}${followUpNote}
 
 INSTRUCTIONS:
-1. First recommend the most relevant books from my knowledge base above (prioritize "metadata" search results as they are most precise)
-2. Pay special attention to books marked with "Topic match" or "Title/Author match" - these are exact metadata matches
+1. First recommend the most relevant books from my knowledge base above (prioritize "multi_match", "entity", and "topic" search results)
+2. Pay special attention to books with multiple match types - these are highly relevant
 3. Explain why each recommendation is valuable and relevant to the request
 4. Include specific details about the books (genre, difficulty, key topics, tags)
 5. Then provide 2-3 additional general recommendations if helpful
@@ -672,68 +907,6 @@ User Request: ${message}`
     },
     directResponse: finalResponse
   }
-}
-
-// Helper function to calculate metadata relevance
-function calculateMetadataRelevance(doc: any, topic: string, query: string, difficulty?: string): number {
-  let score = 0.6 // Base score for metadata match
-  
-  const topicLower = topic.toLowerCase()
-  const queryLower = query.toLowerCase()
-  
-  // Topic field exact match (highest relevance)
-  if ((doc.topic || '').toLowerCase().includes(topicLower)) score += 0.35
-  
-  // Genre match
-  if ((doc.genre || '').toLowerCase().includes(topicLower)) score += 0.25
-  
-  // Tags match
-  if ((doc.tags || '').toLowerCase().includes(topicLower)) score += 0.2
-  
-  // Title relevance
-  if ((doc.title || '').toLowerCase().includes(topicLower)) score += 0.3
-  
-  // Summary relevance
-  if ((doc.summary || '').toLowerCase().includes(topicLower)) score += 0.15
-  
-  // Difficulty alignment bonus
-  if (difficulty && (doc.difficulty || '').toLowerCase().includes(difficulty.toLowerCase())) {
-    score += 0.1
-  }
-  
-  // Multi-word query bonus
-  const queryWords = queryLower.split(' ').filter(w => w.length > 2)
-  const matchingWords = queryWords.filter(word => 
-    (doc.title || '').toLowerCase().includes(word) ||
-    (doc.topic || '').toLowerCase().includes(word) ||
-    (doc.tags || '').toLowerCase().includes(word)
-  ).length
-  
-  if (matchingWords > 1) {
-    score += 0.1 * matchingWords
-  }
-  
-  return Math.min(1.0, score)
-}
-
-// Helper function to calculate title/author relevance
-function calculateTitleRelevance(doc: any, word: string, query: string): number {
-  let score = 0.4 // Base score for title/author match
-  
-  const title = (doc.title || '').toLowerCase()
-  const author = (doc.author || '').toLowerCase()
-  
-  if (title.includes(word)) score += 0.4
-  if (author.includes(word)) score += 0.3
-  
-  // Bonus for exact word matches
-  const titleWords = title.split(' ')
-  const authorWords = author.split(' ')
-  
-  if (titleWords.includes(word)) score += 0.2
-  if (authorWords.includes(word)) score += 0.15
-  
-  return Math.min(1.0, score)
 }
 
 async function handleAsk(message: string, classification: QueryClassification, supabase: any) {
@@ -905,5 +1078,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
- 
