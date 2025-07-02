@@ -244,209 +244,292 @@ Statistics:
   }
 }
 
+// Multi-Stage Hierarchical Search Implementation
+async function hierarchicalChunkSearch(query: string, supabase: any): Promise<{
+  chunks: any[]
+  searchStages: any
+  totalRelevanceScore: number
+}> {
+  console.log('🏗️ Starting Multi-Stage Hierarchical Search for:', query)
+  
+  const analysis = await analyzeQueryForMetadata(query)
+  const allCandidates = new Map() // Use Map to avoid duplicates
+  const stageResults = {
+    stage1_structure: 0,
+    stage2_semantic: 0, 
+    stage3_density: 0,
+    total_unique: 0
+  }
+
+  // STAGE 1: Content Structure Search
+  // Look for chapter titles, section headers, and structural elements
+  console.log('📖 STAGE 1: Content Structure Search')
+  
+  const structuralTerms = [
+    ...analysis.topics.map((t: string) => t.toLowerCase()),
+    ...analysis.entities.map((e: string) => e.toLowerCase()),
+    query.toLowerCase()
+  ].filter(term => term.length > 3)
+
+  for (const term of structuralTerms) {
+    // Search for structural content like "Chapter X: [term]", "Section on [term]", etc.
+    const structuralPatterns = [
+      `chapter%${term}%`,
+      `section%${term}%`, 
+      `part%${term}%`,
+      `${term}%chapter`,
+      `${term}%section`,
+      `introduction%${term}%`,
+      `conclusion%${term}%`
+    ]
+
+    for (const pattern of structuralPatterns) {
+      const { data: structuralChunks } = await supabase
+        .from('documents_enhanced')
+        .select('*')
+        .ilike('content', pattern)
+        .limit(5)
+
+      if (structuralChunks && structuralChunks.length > 0) {
+        structuralChunks.forEach((chunk: any) => {
+          const chunkKey = `${chunk.id}`
+          if (!allCandidates.has(chunkKey)) {
+            allCandidates.set(chunkKey, {
+              ...chunk,
+              relevance_score: 0.95, // High score for structural matches
+              match_reason: `Structural content: ${term}`,
+              search_stage: 'structure',
+              content_type: 'structural'
+            })
+            stageResults.stage1_structure++
+          }
+        })
+      }
+    }
+  }
+
+  // STAGE 2: Enhanced Chunk-Level Semantic Search
+  console.log('🔍 STAGE 2: Enhanced Chunk-Level Semantic Search')
+  
+  try {
+    const queryEmbedding = await generateEmbedding(query)
+    const { data: semanticChunks, error: vectorError } = await supabase.rpc(
+      'match_documents_enhanced',
+      {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.1,
+        match_count: 20
+      }
+    )
+
+    if (!vectorError && semanticChunks && semanticChunks.length > 0) {
+      semanticChunks.forEach((chunk: any) => {
+        const chunkKey = `${chunk.id}`
+        if (!allCandidates.has(chunkKey)) {
+          allCandidates.set(chunkKey, {
+            ...chunk,
+            relevance_score: chunk.similarity || 0.5,
+            match_reason: `Semantic similarity: ${Math.round((chunk.similarity || 0) * 100)}%`,
+            search_stage: 'semantic',
+            content_type: 'semantic'
+          })
+          stageResults.stage2_semantic++
+        } else {
+          // Boost score for chunks found in multiple stages
+          const existing = allCandidates.get(chunkKey)
+          existing.relevance_score = Math.min(1.0, existing.relevance_score + 0.2)
+          existing.match_reason += ` + Semantic match`
+          existing.search_stage = 'multi_stage'
+        }
+      })
+    }
+  } catch (error) {
+    console.error('❌ Semantic search error:', error)
+  }
+
+  // STAGE 3: Content Density Analysis
+  console.log('🎯 STAGE 3: Content Density Analysis')
+  
+  // For chunks already found, analyze content density for better ranking
+  const searchTerms = [
+    ...analysis.topics,
+    ...analysis.entities,
+    ...query.split(' ').filter(w => w.length > 3)
+  ].map(t => t.toLowerCase())
+
+  allCandidates.forEach((chunk, chunkKey) => {
+    const content = (chunk.content || '').toLowerCase()
+    const contentWords = content.split(/\s+/)
+    
+    // Calculate density metrics
+    let termFrequency = 0
+    let termDensity = 0
+    let topicFocus = 0
+
+    searchTerms.forEach(term => {
+      const termCount = (content.match(new RegExp(term, 'gi')) || []).length
+      termFrequency += termCount
+      
+      // Check if this chunk seems focused on the topic
+      if (termCount > 2) {
+        topicFocus += 1
+      }
+    })
+
+    termDensity = contentWords.length > 0 ? termFrequency / contentWords.length : 0
+
+    // Bonus scoring for high-density content
+    if (termDensity > 0.01) { // More than 1% of words are relevant terms
+      chunk.relevance_score = Math.min(1.0, chunk.relevance_score + 0.15)
+      chunk.match_reason += ` + High density (${(termDensity * 100).toFixed(1)}%)`
+      stageResults.stage3_density++
+    }
+
+    if (topicFocus > 2) { // Multiple terms appear frequently
+      chunk.relevance_score = Math.min(1.0, chunk.relevance_score + 0.1)
+      chunk.match_reason += ` + Topic focused`
+    }
+
+    // Add density metrics to chunk
+    chunk.density_metrics = {
+      term_frequency: termFrequency,
+      term_density: termDensity,
+      topic_focus: topicFocus,
+      content_length: contentWords.length
+    }
+  })
+
+  const finalChunks = Array.from(allCandidates.values())
+    .sort((a, b) => {
+      // Multi-stage chunks get priority
+      if (a.search_stage === 'multi_stage' && b.search_stage !== 'multi_stage') return -1
+      if (b.search_stage === 'multi_stage' && a.search_stage !== 'multi_stage') return 1
+      
+      // Then by relevance score
+      return (b.relevance_score || 0) - (a.relevance_score || 0)
+    })
+    .slice(0, 12) // Get top 12 most relevant chunks
+
+  stageResults.total_unique = finalChunks.length
+  
+  const avgRelevance = finalChunks.length > 0 
+    ? finalChunks.reduce((sum, chunk) => sum + (chunk.relevance_score || 0), 0) / finalChunks.length 
+    : 0
+
+  console.log('🎯 Hierarchical Search Results:', stageResults)
+  console.log(`📊 Average Relevance: ${(avgRelevance * 100).toFixed(1)}%`)
+  
+  return {
+    chunks: finalChunks,
+    searchStages: stageResults,
+    totalRelevanceScore: avgRelevance
+  }
+}
+
 async function handleSearch(message: string, classification: QueryClassification, supabase: any) {
-  console.log('🔍 Handling targeted search within knowledge base')
+  console.log('🔍 Handling search with Multi-Stage Hierarchical Search')
   
   let sources: any[] = []
   let contextForAI = ''
 
   try {
-    // AI-POWERED DYNAMIC SEARCH ANALYSIS
-    const analysis = await analyzeQueryForMetadata(message)
-    console.log('🧠 AI Search Analysis:', analysis)
+    // Use the new hierarchical search system
+    const searchResults = await hierarchicalChunkSearch(message, supabase)
     
-    let allCandidates: any[] = []
+    // Group chunks by document for better organization
+    const documentsMap = new Map()
     
-    // Step 1: Entity-focused search (people, companies, concepts)
-    if (analysis.entities && analysis.entities.length > 0) {
-      for (const entity of analysis.entities) {
-        console.log(`🏢 Entity search: "${entity}"`)
-        
-        const { data: entityDocs } = await supabase
-          .from('documents_enhanced')
-          .select('*')
-          .or(`title.ilike.%${entity}%,author.ilike.%${entity}%,tags.ilike.%${entity}%,summary.ilike.%${entity}%,content.ilike.%${entity}%`)
-          .limit(8)
-        
-        if (entityDocs && entityDocs.length > 0) {
-          const scoredDocs = entityDocs.map((doc: any) => ({
-            ...doc,
-            search_score: calculateEntityRelevance(doc, entity, message),
-            match_reason: `Entity: ${entity}`,
-            search_type: 'entity'
-          }))
-          allCandidates.push(...scoredDocs)
-          console.log(`✅ Found ${entityDocs.length} docs for entity "${entity}"`)
-        }
-      }
-    }
-    
-    // Step 2: Topic-focused search (dynamic topics from AI analysis)
-    if (analysis.topics && analysis.topics.length > 0) {
-      for (const topic of analysis.topics) {
-        console.log(`📚 Topic search: "${topic}"`)
-        
-        const { data: topicDocs } = await supabase
-          .from('documents_enhanced')
-          .select('*')
-          .or(`topic.ilike.%${topic}%,genre.ilike.%${topic}%,tags.ilike.%${topic}%,title.ilike.%${topic}%,summary.ilike.%${topic}%`)
-          .limit(8)
-        
-        if (topicDocs && topicDocs.length > 0) {
-          const scoredDocs = topicDocs.map((doc: any) => ({
-            ...doc,
-            search_score: calculateTopicRelevance(doc, topic, message, analysis),
-            match_reason: `Topic: ${topic}`,
-            search_type: 'topic'
-          }))
-          allCandidates.push(...scoredDocs)
-          console.log(`✅ Found ${topicDocs.length} docs for topic "${topic}"`)
-        }
-      }
-    }
-    
-    // Step 3: Genre/document type search
-    if (analysis.genres && analysis.genres.length > 0) {
-      for (const genre of analysis.genres) {
-        const { data: genreDocs } = await supabase
-          .from('documents_enhanced')
-          .select('*')
-          .or(`genre.ilike.%${genre}%,doc_type.ilike.%${genre}%`)
-          .limit(6)
-        
-        if (genreDocs && genreDocs.length > 0) {
-          const scoredDocs = genreDocs.map((doc: any) => ({
-            ...doc,
-            search_score: calculateGenreRelevance(doc, genre, analysis),
-            match_reason: `Genre: ${genre}`,
-            search_type: 'genre'
-          }))
-          allCandidates.push(...scoredDocs)
-        }
-      }
-    }
-    
-    // Step 4: Full-text search as comprehensive backup
-    const searchTerms = [
-      ...(analysis.entities || []), 
-      ...(analysis.topics || []), 
-      ...(analysis.genres || [])
-    ].filter(term => term.length > 2)
-    
-    if (searchTerms.length > 0) {
-      const searchQuery = searchTerms.join(' | ') // OR search
+    searchResults.chunks.forEach((chunk: any) => {
+      const title = chunk.title || 'Unknown Document'
+      const author = chunk.author || 'Unknown Author'
+      const docKey = `${title.toLowerCase()}-${author.toLowerCase()}`
       
-      const { data: fullTextDocs } = await supabase
-        .from('documents_enhanced')
-        .select('*')
-        .textSearch('title,summary,tags,topic,genre,content', searchQuery)
-        .limit(12)
-      
-      if (fullTextDocs && fullTextDocs.length > 0) {
-        const scoredDocs = fullTextDocs.map((doc: any) => ({
-          ...doc,
-          search_score: calculateFullTextRelevance(doc, searchTerms, message),
-          match_reason: `Full-text search`,
-          search_type: 'fulltext'
-        }))
-        allCandidates.push(...scoredDocs)
-        console.log(`✅ Full-text search found ${fullTextDocs.length} additional docs`)
-      }
-    }
-    
-    // Step 5: Vector search for semantic understanding
-    const queryEmbedding = await generateEmbedding(message)
-    const { data: vectorResults, error: vectorError } = await supabase.rpc(
-      'match_documents_enhanced',
-      {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.3,
-        match_count: 12
-      }
-    )
-
-    if (!vectorError && vectorResults && vectorResults.length > 0) {
-      const vectorDocs = vectorResults.map((doc: any) => ({
-        ...doc,
-        search_score: doc.similarity || 0.5,
-        match_reason: `Semantic: ${Math.round((doc.similarity || 0) * 100)}%`,
-        search_type: 'vector'
-      }))
-      allCandidates.push(...vectorDocs)
-    }
-    
-    // Step 6: Advanced deduplication and ranking
-    const sourcesMap = new Map()
-    
-    allCandidates.forEach((doc: any) => {
-      if (!doc.title) return
-
-      const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
-      
-      // Combine scores for multi-match documents
-      if (sourcesMap.has(bookKey)) {
-        const existing = sourcesMap.get(bookKey)
-        const combinedScore = Math.max(existing.search_score, doc.search_score) * 1.15 // Boost for multiple matches
-        const combinedReason = `${existing.match_reason} + ${doc.match_reason}`
-        
-        sourcesMap.set(bookKey, {
-          ...existing,
-          search_score: Math.min(1.0, combinedScore),
-          match_reason: combinedReason,
-          search_type: 'multi_match'
-        })
-      } else {
-        sourcesMap.set(bookKey, {
-          title: doc.title,
-          author: doc.author || 'Unknown Author',
-          content: doc.content || '',
-          doc_type: doc.doc_type,
-          genre: doc.genre,
-          topic: doc.topic,
-          difficulty: doc.difficulty,
-          tags: doc.tags,
-          summary: doc.summary,
-          similarity: doc.search_score,
-          match_reason: doc.match_reason,
-          search_type: doc.search_type,
-          page_number: extractPageFromContent(doc.content)
+      if (!documentsMap.has(docKey)) {
+        documentsMap.set(docKey, {
+          title,
+          author,
+          doc_type: chunk.doc_type,
+          genre: chunk.genre,
+          topic: chunk.topic,
+          difficulty: chunk.difficulty,
+          tags: chunk.tags,
+          chunks: [],
+          best_relevance: chunk.relevance_score || 0,
+          search_stages: new Set()
         })
       }
-    })
-
-    sources = Array.from(sourcesMap.values())
-      .sort((a, b) => {
-        // Prioritize multi-matches and entity/topic matches
-        const aPriority = a.search_type === 'multi_match' ? 3 : 
-                         (a.search_type === 'entity' || a.search_type === 'topic') ? 2 : 1
-        const bPriority = b.search_type === 'multi_match' ? 3 : 
-                         (b.search_type === 'entity' || b.search_type === 'topic') ? 2 : 1
-        
-        if (aPriority !== bPriority) return bPriority - aPriority
-        return (b.similarity || 0) - (a.similarity || 0)
+      
+      const doc = documentsMap.get(docKey)
+      doc.chunks.push({
+        content: chunk.content,
+        chunk_id: chunk.chunk_id,
+        relevance_score: chunk.relevance_score,
+        match_reason: chunk.match_reason,
+        search_stage: chunk.search_stage,
+        density_metrics: chunk.density_metrics,
+        page_number: extractPageFromContent(chunk.content)
       })
-      .slice(0, 10)
-
-    console.log(`🎯 Search results: ${sources.length} relevant sources`)
-    sources.forEach((source, i) => {
-      console.log(`${i+1}. "${source.title}" - ${source.match_reason} (${Math.round((source.similarity || 0) * 100)}%)`)
+      
+      doc.search_stages.add(chunk.search_stage)
+      doc.best_relevance = Math.max(doc.best_relevance, chunk.relevance_score || 0)
     })
 
-    contextForAI = `SEARCH RESULTS FOR: "${message}"
-Found ${sources.length} relevant sources using AI-powered analysis:
+    sources = Array.from(documentsMap.values())
+      .sort((a, b) => {
+        // Prioritize documents found in multiple stages
+        const aStages = a.search_stages.size
+        const bStages = b.search_stages.size
+        if (aStages !== bStages) return bStages - aStages
+        
+        return b.best_relevance - a.best_relevance
+      })
+      .map((doc: any) => ({
+        title: doc.title,
+        author: doc.author,
+        doc_type: doc.doc_type,
+        genre: doc.genre,
+        topic: doc.topic,
+        difficulty: doc.difficulty,
+        tags: doc.tags,
+        content: doc.chunks[0]?.content || '', // Use best chunk as primary content
+        similarity: doc.best_relevance,
+        match_reason: doc.chunks[0]?.match_reason || '',
+        search_type: doc.search_stages.has('multi_stage') ? 'multi_stage' : Array.from(doc.search_stages)[0],
+        chunk_count: doc.chunks.length,
+        all_chunks: doc.chunks,
+        page_number: doc.chunks[0]?.page_number
+      }))
+      .slice(0, 8)
 
-AI Analysis: ${JSON.stringify(analysis, null, 2)}
+    console.log(`🎯 Hierarchical search results: ${sources.length} documents with ${searchResults.chunks.length} total chunks`)
+    sources.forEach((doc, i) => {
+      console.log(`${i+1}. "${doc.title}" - ${doc.match_reason} (${Math.round((doc.similarity || 0) * 100)}%) [${doc.chunk_count} chunks]`)
+    })
+
+    contextForAI = `HIERARCHICAL SEARCH RESULTS for "${message}":
+    
+Search Performance:
+- Stage 1 (Structure): ${searchResults.searchStages.stage1_structure} chunks
+- Stage 2 (Semantic): ${searchResults.searchStages.stage2_semantic} chunks  
+- Stage 3 (Density): ${searchResults.searchStages.stage3_density} enhanced chunks
+- Total Unique: ${searchResults.searchStages.total_unique} chunks
+- Average Relevance: ${(searchResults.totalRelevanceScore * 100).toFixed(1)}%
+
+Found ${sources.length} relevant documents with detailed chunk analysis:
 
 ${sources.map((doc: any, i: number) => 
-  `SOURCE ${i + 1}: "${doc.title}" by ${doc.author} (${doc.match_reason})
-Genre: ${doc.genre || 'N/A'} | Topic: ${doc.topic || 'N/A'} | Difficulty: ${doc.difficulty || 'N/A'}
-Search Type: ${doc.search_type} | Tags: ${doc.tags || 'N/A'}
-Content: ${doc.content}`
+  `${i + 1}. "${doc.title}" by ${doc.author}
+   Search Type: ${doc.search_type} | Relevance: ${Math.round((doc.similarity || 0) * 100)}%
+   Match Reason: ${doc.match_reason}
+   Document Info: ${doc.doc_type} | Genre: ${doc.genre || 'N/A'} | Topic: ${doc.topic || 'N/A'}
+   Content Analysis: ${doc.chunk_count} relevant chunks found
+   
+   Most Relevant Content: ${doc.content.substring(0, 300)}...`
 ).join('\n\n')}`
 
   } catch (error) {
-    console.error('❌ Error in AI-powered search:', error)
-    contextForAI = `Error occurred during intelligent search for: "${message}"`
+    console.error('❌ Error in hierarchical search:', error)
+    contextForAI = `Error occurred during hierarchical search for: "${message}"`
   }
 
   return {
@@ -457,12 +540,12 @@ Content: ${doc.content}`
       searchQuery: message,
       sourcesFound: sources.length,
       avgRelevance: sources.length > 0 ? Math.round(sources.reduce((sum, s) => sum + (s.similarity || 0), 0) / sources.length * 100) : 0,
-      searchTypes: sources.reduce((acc, s) => {
+      searchMethod: 'hierarchical_chunk_search',
+      searchStages: sources.reduce((acc, s) => {
         acc[s.search_type] = (acc[s.search_type] || 0) + 1
         return acc
       }, {} as Record<string, number>)
-    },
-    directResponse: null // Will be generated by main handler
+    }
   }
 }
 
@@ -628,7 +711,7 @@ Respond in JSON format:
 }
 
 async function handleRecommend(message: string, classification: QueryClassification, supabase: any, chatHistory: any[] = []) {
-  console.log('🎯 Handling recommendation request')
+  console.log('🎯 Handling recommendation request with hierarchical search')
   
   // Extract previously recommended books from chat history
   const previouslyRecommended = new Set<string>()
@@ -645,196 +728,269 @@ async function handleRecommend(message: string, classification: QueryClassificat
   
   console.log('📚 Previously recommended books:', previouslyRecommended.size)
   
-  // AI-POWERED DYNAMIC METADATA SEARCH
   let sources: any[] = []
   let contextForAI = ''
 
   try {
-    // Step 1: Use AI to analyze the query and extract search criteria
+    // STEP 1: Try hierarchical chunk search first for topic-specific recommendations
+    console.log('🏗️ Using hierarchical search for recommendations')
+    const searchResults = await hierarchicalChunkSearch(message, supabase)
+    
+    if (searchResults.chunks.length > 0) {
+      console.log(`✅ Hierarchical search found ${searchResults.chunks.length} relevant chunks`)
+      
+      // Group chunks by book and filter out previously recommended
+      const booksMap = new Map()
+      
+      searchResults.chunks.forEach((chunk: any) => {
+        if (!chunk.title) return
+        
+        const bookKey = `${chunk.title.toLowerCase()}-${(chunk.author || 'unknown').toLowerCase()}`
+        
+        // Skip previously recommended books
+        if (previouslyRecommended.has(bookKey)) {
+          console.log('⏭️ Skipping previously recommended book:', chunk.title)
+          return
+        }
+        
+        if (!booksMap.has(bookKey)) {
+          booksMap.set(bookKey, {
+            title: chunk.title,
+            author: chunk.author || 'Unknown Author',
+            doc_type: chunk.doc_type,
+            genre: chunk.genre,
+            topic: chunk.topic,
+            difficulty: chunk.difficulty,
+            tags: chunk.tags,
+            content: chunk.content,
+            similarity: chunk.relevance_score || 0,
+            match_reason: chunk.match_reason || 'Hierarchical match',
+            search_type: chunk.search_stage || 'hierarchical',
+            page_number: extractPageFromContent(chunk.content),
+            chunk_count: 0,
+            best_chunk_content: chunk.content,
+            hierarchical_score: chunk.relevance_score || 0
+          })
+        }
+        
+        const book = booksMap.get(bookKey)
+        book.chunk_count++
+        
+        // Update to best content if this chunk has higher relevance
+        if ((chunk.relevance_score || 0) > book.hierarchical_score) {
+          book.best_chunk_content = chunk.content
+          book.similarity = chunk.relevance_score || 0
+          book.match_reason = chunk.match_reason || 'Hierarchical match'
+          book.hierarchical_score = chunk.relevance_score || 0
+        }
+      })
+      
+      // Sort by hierarchical score and chunk count (more chunks = more relevant)
+      const hierarchicalBooks = Array.from(booksMap.values())
+        .sort((a, b) => {
+          // Prioritize books with multiple relevant chunks
+          const aScore = a.hierarchical_score + (a.chunk_count > 1 ? 0.2 : 0)
+          const bScore = b.hierarchical_score + (b.chunk_count > 1 ? 0.2 : 0)
+          return bScore - aScore
+        })
+        .slice(0, 5) // Get top 5 from hierarchical search
+      
+      sources.push(...hierarchicalBooks)
+      console.log(`🎯 Hierarchical search provided ${hierarchicalBooks.length} book recommendations`)
+    }
+    
+    // Get AI analysis for metadata search (used in contextForAI regardless)
     const analysis = await analyzeQueryForMetadata(message)
     
-    let allCandidates: any[] = []
+    // STEP 2: If we need more recommendations, fall back to AI-POWERED METADATA SEARCH
+    if (sources.length < 3) {
+      console.log('🔍 Supplementing with AI-powered metadata search')
+      
+      let allCandidates: any[] = []
     
-    // Step 2: Entity-focused search (people, companies, concepts)
-    if (analysis.entities && analysis.entities.length > 0) {
-      for (const entity of analysis.entities) {
-        console.log(`🏢 Entity search: "${entity}"`)
+      // Step 2: Entity-focused search (people, companies, concepts)
+      if (analysis.entities && analysis.entities.length > 0) {
+        for (const entity of analysis.entities) {
+          console.log(`🏢 Entity search: "${entity}"`)
+          
+          const { data: entityDocs } = await supabase
+            .from('documents_enhanced')
+            .select('*')
+            .or(`title.ilike.%${entity}%,author.ilike.%${entity}%,tags.ilike.%${entity}%,summary.ilike.%${entity}%`)
+            .limit(8)
+          
+          if (entityDocs && entityDocs.length > 0) {
+            const scoredDocs = entityDocs.map((doc: any) => ({
+              ...doc,
+              metadata_score: calculateEntityRelevance(doc, entity, message),
+              match_reason: `Entity match: ${entity}`,
+              search_type: 'entity'
+            }))
+            allCandidates.push(...scoredDocs)
+            console.log(`✅ Found ${entityDocs.length} docs for entity "${entity}"`)
+          }
+        }
+      }
+      
+      // Step 3: Topic-focused search (dynamic topics from AI analysis)
+      if (analysis.topics && analysis.topics.length > 0) {
+        for (const topic of analysis.topics) {
+          console.log(`📚 Topic search: "${topic}"`)
+          
+          const { data: topicDocs } = await supabase
+            .from('documents_enhanced')
+            .select('*')
+            .or(`topic.ilike.%${topic}%,genre.ilike.%${topic}%,tags.ilike.%${topic}%,title.ilike.%${topic}%,summary.ilike.%${topic}%`)
+            .limit(8)
+          
+          if (topicDocs && topicDocs.length > 0) {
+            const scoredDocs = topicDocs.map((doc: any) => ({
+              ...doc,
+              metadata_score: calculateTopicRelevance(doc, topic, message, analysis),
+              match_reason: `Topic match: ${topic}`,
+              search_type: 'topic'
+            }))
+            allCandidates.push(...scoredDocs)
+            console.log(`✅ Found ${topicDocs.length} docs for topic "${topic}"`)
+          }
+        }
+      }
+      
+      // Step 4: Genre/document type filtering
+      if (analysis.genres && analysis.genres.length > 0) {
+        for (const genre of analysis.genres) {
+          const { data: genreDocs } = await supabase
+            .from('documents_enhanced')
+            .select('*')
+            .or(`genre.ilike.%${genre}%,doc_type.ilike.%${genre}%`)
+            .limit(5)
+          
+          if (genreDocs && genreDocs.length > 0) {
+            const scoredDocs = genreDocs.map((doc: any) => ({
+              ...doc,
+              metadata_score: calculateGenreRelevance(doc, genre, analysis),
+              match_reason: `Genre match: ${genre}`,
+              search_type: 'genre'
+            }))
+            allCandidates.push(...scoredDocs)
+          }
+        }
+      }
+      
+      // Step 5: Full-text search as backup for any missed terms
+      const searchTerms = [
+        ...(analysis.entities || []), 
+        ...(analysis.topics || []), 
+        ...(analysis.genres || [])
+      ].filter(term => term.length > 2)
+      
+      if (searchTerms.length > 0) {
+        // Use PostgreSQL full-text search
+        const searchQuery = searchTerms.join(' | ') // OR search
         
-        const { data: entityDocs } = await supabase
+        const { data: fullTextDocs } = await supabase
           .from('documents_enhanced')
           .select('*')
-          .or(`title.ilike.%${entity}%,author.ilike.%${entity}%,tags.ilike.%${entity}%,summary.ilike.%${entity}%`)
-          .limit(8)
+          .textSearch('title,summary,tags,topic,genre', searchQuery)
+          .limit(10)
         
-        if (entityDocs && entityDocs.length > 0) {
-          const scoredDocs = entityDocs.map((doc: any) => ({
+        if (fullTextDocs && fullTextDocs.length > 0) {
+          const scoredDocs = fullTextDocs.map((doc: any) => ({
             ...doc,
-            metadata_score: calculateEntityRelevance(doc, entity, message),
-            match_reason: `Entity match: ${entity}`,
-            search_type: 'entity'
+            metadata_score: calculateFullTextRelevance(doc, searchTerms, message),
+            match_reason: `Full-text search`,
+            search_type: 'fulltext'
           }))
           allCandidates.push(...scoredDocs)
-          console.log(`✅ Found ${entityDocs.length} docs for entity "${entity}"`)
+          console.log(`✅ Full-text search found ${fullTextDocs.length} additional docs`)
         }
       }
-    }
-    
-    // Step 3: Topic-focused search (dynamic topics from AI analysis)
-    if (analysis.topics && analysis.topics.length > 0) {
-      for (const topic of analysis.topics) {
-        console.log(`📚 Topic search: "${topic}"`)
+      
+      // Step 6: Vector search as semantic fallback
+      if (allCandidates.length < 5) {
+        console.log('🔍 Adding semantic vector search for broader coverage')
+        const queryEmbedding = await generateEmbedding(message)
+        const { data: vectorResults, error: vectorError } = await supabase.rpc(
+          'match_documents_enhanced',
+          {
+            query_embedding: queryEmbedding,
+            match_threshold: 0.1,
+            match_count: 15
+          }
+        )
         
-        const { data: topicDocs } = await supabase
-          .from('documents_enhanced')
-          .select('*')
-          .or(`topic.ilike.%${topic}%,genre.ilike.%${topic}%,tags.ilike.%${topic}%,title.ilike.%${topic}%,summary.ilike.%${topic}%`)
-          .limit(8)
-        
-        if (topicDocs && topicDocs.length > 0) {
-          const scoredDocs = topicDocs.map((doc: any) => ({
+        if (!vectorError && vectorResults && vectorResults.length > 0) {
+          const vectorDocs = vectorResults.map((doc: any) => ({
             ...doc,
-            metadata_score: calculateTopicRelevance(doc, topic, message, analysis),
-            match_reason: `Topic match: ${topic}`,
-            search_type: 'topic'
+            metadata_score: doc.similarity || 0.5,
+            match_reason: `Semantic similarity: ${Math.round((doc.similarity || 0) * 100)}%`,
+            search_type: 'vector'
           }))
-          allCandidates.push(...scoredDocs)
-          console.log(`✅ Found ${topicDocs.length} docs for topic "${topic}"`)
+          allCandidates.push(...vectorDocs)
         }
       }
-    }
-    
-    // Step 4: Genre/document type filtering
-    if (analysis.genres && analysis.genres.length > 0) {
-      for (const genre of analysis.genres) {
-        const { data: genreDocs } = await supabase
-          .from('documents_enhanced')
-          .select('*')
-          .or(`genre.ilike.%${genre}%,doc_type.ilike.%${genre}%`)
-          .limit(5)
-        
-        if (genreDocs && genreDocs.length > 0) {
-          const scoredDocs = genreDocs.map((doc: any) => ({
-            ...doc,
-            metadata_score: calculateGenreRelevance(doc, genre, analysis),
-            match_reason: `Genre match: ${genre}`,
-            search_type: 'genre'
-          }))
-          allCandidates.push(...scoredDocs)
-        }
-      }
-    }
-    
-    // Step 5: Full-text search as backup for any missed terms
-    const searchTerms = [
-      ...(analysis.entities || []), 
-      ...(analysis.topics || []), 
-      ...(analysis.genres || [])
-    ].filter(term => term.length > 2)
-    
-    if (searchTerms.length > 0) {
-      // Use PostgreSQL full-text search
-      const searchQuery = searchTerms.join(' | ') // OR search
       
-      const { data: fullTextDocs } = await supabase
-        .from('documents_enhanced')
-        .select('*')
-        .textSearch('title,summary,tags,topic,genre', searchQuery)
-        .limit(10)
+      // Step 7: Advanced deduplication and ranking
+      const metadataBooksMap = new Map()
       
-      if (fullTextDocs && fullTextDocs.length > 0) {
-        const scoredDocs = fullTextDocs.map((doc: any) => ({
-          ...doc,
-          metadata_score: calculateFullTextRelevance(doc, searchTerms, message),
-          match_reason: `Full-text search`,
-          search_type: 'fulltext'
-        }))
-        allCandidates.push(...scoredDocs)
-        console.log(`✅ Full-text search found ${fullTextDocs.length} additional docs`)
-      }
-    }
-    
-    // Step 6: Vector search as semantic fallback
-    if (allCandidates.length < 5) {
-      console.log('🔍 Adding semantic vector search for broader coverage')
-      const queryEmbedding = await generateEmbedding(message)
-      const { data: vectorResults, error: vectorError } = await supabase.rpc(
-        'match_documents_enhanced',
-        {
-          query_embedding: queryEmbedding,
-          match_threshold: 0.1,
-          match_count: 15
-        }
-      )
-      
-      if (!vectorError && vectorResults && vectorResults.length > 0) {
-        const vectorDocs = vectorResults.map((doc: any) => ({
-          ...doc,
-          metadata_score: doc.similarity || 0.5,
-          match_reason: `Semantic similarity: ${Math.round((doc.similarity || 0) * 100)}%`,
-          search_type: 'vector'
-        }))
-        allCandidates.push(...vectorDocs)
-      }
-    }
-    
-    // Step 7: Advanced deduplication and ranking
-    const booksMap = new Map()
-    
-    allCandidates.forEach((doc: any) => {
-      if (!doc.title) return
+      allCandidates.forEach((doc: any) => {
+        if (!doc.title) return
 
-      const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
-      
-      // Skip if this book was already recommended
-      if (previouslyRecommended.has(bookKey)) {
-        console.log('⏭️ Skipping previously recommended book:', doc.title)
-        return
-      }
-      
-      // Combine scores for multi-match documents
-      if (booksMap.has(bookKey)) {
-        const existing = booksMap.get(bookKey)
-        const combinedScore = Math.max(existing.metadata_score, doc.metadata_score) * 1.15 // Boost for multiple matches
-        const combinedReason = `${existing.match_reason} + ${doc.match_reason}`
+        const bookKey = `${doc.title.toLowerCase()}-${(doc.author || 'unknown').toLowerCase()}`
         
-        booksMap.set(bookKey, {
-          ...existing,
-          metadata_score: Math.min(1.0, combinedScore),
-          match_reason: combinedReason,
-          search_type: 'multi_match'
-        })
-      } else {
-        booksMap.set(bookKey, {
-          title: doc.title,
-          author: doc.author || 'Unknown Author',
-          content: doc.content || '',
-          doc_type: doc.doc_type,
-          genre: doc.genre,
-          topic: doc.topic,
-          difficulty: doc.difficulty,
-          summary: doc.summary,
-          tags: doc.tags,
-          similarity: doc.metadata_score,
-          match_reason: doc.match_reason,
-          search_type: doc.search_type,
-          page_number: extractPageFromContent(doc.content)
-        })
-      }
-    })
-
-    // Step 8: Smart ranking that prioritizes metadata matches
-    sources = Array.from(booksMap.values())
-      .sort((a, b) => {
-        // Prioritize multi-matches and entity/topic matches
-        const aPriority = a.search_type === 'multi_match' ? 3 : 
-                         (a.search_type === 'entity' || a.search_type === 'topic') ? 2 : 1
-        const bPriority = b.search_type === 'multi_match' ? 3 : 
-                         (b.search_type === 'entity' || b.search_type === 'topic') ? 2 : 1
+        // Skip if this book was already recommended or already found by hierarchical search
+        if (previouslyRecommended.has(bookKey) || sources.some(s => s.title?.toLowerCase() === doc.title?.toLowerCase())) {
+          return
+        }
         
-        if (aPriority !== bPriority) return bPriority - aPriority
-        return (b.similarity || 0) - (a.similarity || 0)
+        // Combine scores for multi-match documents
+        if (metadataBooksMap.has(bookKey)) {
+          const existing = metadataBooksMap.get(bookKey)
+          const combinedScore = Math.max(existing.metadata_score, doc.metadata_score) * 1.15 // Boost for multiple matches
+          const combinedReason = `${existing.match_reason} + ${doc.match_reason}`
+          
+          metadataBooksMap.set(bookKey, {
+            ...existing,
+            metadata_score: Math.min(1.0, combinedScore),
+            match_reason: combinedReason,
+            search_type: 'multi_match'
+          })
+        } else {
+          metadataBooksMap.set(bookKey, {
+            title: doc.title,
+            author: doc.author || 'Unknown Author',
+            content: doc.content || '',
+            doc_type: doc.doc_type,
+            genre: doc.genre,
+            topic: doc.topic,
+            difficulty: doc.difficulty,
+            summary: doc.summary,
+            tags: doc.tags,
+            similarity: doc.metadata_score,
+            match_reason: doc.match_reason,
+            search_type: doc.search_type,
+            page_number: extractPageFromContent(doc.content)
+          })
+        }
       })
-      .slice(0, 8)
+
+      // Add metadata search results to sources
+      const metadataBooks = Array.from(metadataBooksMap.values())
+        .sort((a, b) => {
+          // Prioritize multi-matches and entity/topic matches
+          const aPriority = a.search_type === 'multi_match' ? 3 : 
+                           (a.search_type === 'entity' || a.search_type === 'topic') ? 2 : 1
+          const bPriority = b.search_type === 'multi_match' ? 3 : 
+                           (b.search_type === 'entity' || b.search_type === 'topic') ? 2 : 1
+          
+          if (aPriority !== bPriority) return bPriority - aPriority
+          return (b.similarity || 0) - (a.similarity || 0)
+        })
+        .slice(0, 8 - sources.length) // Fill remaining slots
+      
+      sources.push(...metadataBooks)
+      console.log(`🔍 Metadata search added ${metadataBooks.length} additional recommendations`)
+    }
 
     console.log(`🎯 Final recommendations: ${sources.length} books`)
     sources.forEach((book, i) => {
