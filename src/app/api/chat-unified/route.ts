@@ -41,47 +41,71 @@ interface QueryClassification {
   contentFilter?: 'books' | 'videos' | 'all'
 }
 
-// Enhanced message with conversation context
-function enhanceMessageWithContext(message: string, chatHistory: any[] = []): string {
+// Enhanced message with conversation context using AI analysis
+async function enhanceMessageWithContext(message: string, chatHistory: any[] = []): Promise<string> {
   const queryLower = message.toLowerCase()
   
-  // Handle context-dependent queries
+  // Handle context-dependent queries using AI
   if (/\b(another\s+one|more|next|continue|similar|like\s+that|give\s+me\s+another)\b/i.test(message)) {
-    // Look for the most recent system response and the user's previous query for context
-    let previousUserQuery = ''
-    let previousAssistantResponse = ''
     
-    for (let i = chatHistory.length - 1; i >= 0; i--) {
-      const historyItem = chatHistory[i]
-      if (historyItem.role === 'assistant' && !previousAssistantResponse) {
-        previousAssistantResponse = historyItem.content.toLowerCase()
-      } else if (historyItem.role === 'user' && !previousUserQuery) {
-        previousUserQuery = historyItem.content.toLowerCase()
+    if (chatHistory.length === 0) {
+      return message // No context available
+    }
+    
+    // Get recent conversation context
+    const recentHistory = chatHistory.slice(-6) // Last 6 messages for context
+    const conversationContext = recentHistory.map((msg: any) => 
+      `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+    ).join('\n')
+    
+    console.log('🧠 Using AI to analyze follow-up context...')
+    
+    try {
+      const contextAnalysisPrompt = `You are analyzing a conversation to understand what the user wants when they say "${message}".
+
+CONVERSATION CONTEXT:
+${conversationContext}
+
+Current user message: "${message}"
+
+The user is making a follow-up request. Analyze the conversation and determine:
+1. What was the user's original request about?
+2. What specific topic/subject were they interested in?
+3. What type of request is this follow-up (recommendation, catalog browsing, search)?
+
+Based on your analysis, create an enhanced query that preserves the original intent and topic.
+
+EXAMPLES:
+- If they asked for "book on coaching" and now say "another one please" → "recommend another book about coaching"
+- If they asked for "leadership books" and say "more please" → "recommend more books about leadership"  
+- If they browsed "business books" and say "show me more" → "show me more business books from my knowledge base"
+
+Respond with ONLY the enhanced query (no explanation):`
+
+      const enhancedQuery = await generateChatCompletion([
+        { role: 'system', content: contextAnalysisPrompt },
+        { role: 'user', content: message }
+      ])
+      
+      const cleanEnhanced = enhancedQuery.trim().replace(/^["']|["']$/g, '') // Remove quotes if present
+      console.log('✅ AI-enhanced query:', cleanEnhanced)
+      
+      return cleanEnhanced
+      
+    } catch (error) {
+      console.error('❌ AI context analysis failed:', error)
+      // Fallback to simpler context detection
+      const lastUserMessage = chatHistory.filter(h => h.role === 'user').slice(-1)[0]?.content || ''
+      const lastAssistantMessage = chatHistory.filter(h => h.role === 'assistant').slice(-1)[0]?.content || ''
+      
+      // Simple fallback logic
+      if (lastAssistantMessage.toLowerCase().includes('recommend') || 
+          /\b(book|suggest|recommend)\b/i.test(lastUserMessage)) {
+        return `${message} (referring to: recommend another book similar to the previous recommendation)`
       }
       
-      if (previousUserQuery && previousAssistantResponse) break
+      return `${message} (contextual request - continue from previous topic)`
     }
-    
-    // Check if previous query was catalog browsing
-    const wasCatalogQuery = /\b(list|name|show|tell\s+me|what)\s+.*\b(books?|in\s+.*memory|available)\b/i.test(previousUserQuery)
-    const responseListedBooks = previousAssistantResponse.includes('here are') && 
-                               (previousAssistantResponse.includes('books') || previousAssistantResponse.includes('in my knowledge base'))
-    
-    if (wasCatalogQuery || responseListedBooks) {
-      // Continue catalog browsing
-      if (/\b(\d+\s+)?more\b/i.test(message)) {
-        return `${message} (referring to: show me more books from my knowledge base)`
-      }
-    }
-    
-    // Check for recommendation context
-    if (previousAssistantResponse.includes('recommend') || 
-        /\b(suggest|good\s+book|best\s+book)\b/i.test(previousUserQuery)) {
-      return `${message} (referring to: recommend another book similar to the previous recommendation)`
-    }
-    
-    // Default enhancement for contextual requests
-    return `${message} (contextual request - continue from previous topic)`
   }
   
   return message
@@ -1168,7 +1192,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServerSupabaseClient()
 
     // Enhanced message with conversation context
-    const enhancedMessage = enhanceMessageWithContext(message, chatHistory)
+    const enhancedMessage = await enhanceMessageWithContext(message, chatHistory)
     
     // Classify the query
     const classification = await classifyQuery(enhancedMessage)
