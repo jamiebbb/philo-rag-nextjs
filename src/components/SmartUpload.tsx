@@ -190,7 +190,7 @@ export function SmartUpload() {
           <span className="font-medium">Automatic File Size Detection</span>
         </div>
         <p className="text-blue-600 text-sm mt-1">
-          Files ≤4MB use fast server processing. Files >4MB use client-side processing to bypass Vercel limits.
+          Files ≤4MB use fast server processing. Files {'>'}4MB use client-side processing to bypass Vercel limits.
         </p>
       </div>
 
