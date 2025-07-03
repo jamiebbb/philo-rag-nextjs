@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, BookOpen, Brain, Menu, MessageSquare, ThumbsUp, ThumbsDown, MessageCircle } from 'lucide-react'
+import { Send, Bot, User, Loader2, BookOpen, Brain, Menu, MessageSquare, ThumbsUp, ThumbsDown, MessageCircle, Star, Edit3 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { ChatMessage } from '@/types'
 import { useChatPersistence } from '@/hooks/useChatPersistence'
@@ -27,6 +27,7 @@ export function UnifiedChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [feedbackStates, setFeedbackStates] = useState<Record<string, { type: string; loading: boolean }>>({})
+  const [detailedFeedback, setDetailedFeedback] = useState<Record<string, { open: boolean; rating: number; comment: string }>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -127,6 +128,65 @@ export function UnifiedChatInterface() {
         return newState
       })
     }
+  }
+
+  const handleDetailedFeedback = async (messageId: string, userQuery: string, aiResponse: string) => {
+    const feedback = detailedFeedback[messageId]
+    if (!feedback || !feedback.comment.trim()) {
+      alert('Please provide a comment before submitting detailed feedback.')
+      return
+    }
+
+    try {
+      setFeedbackStates(prev => ({ 
+        ...prev, 
+        [messageId]: { type: 'detailed', loading: true } 
+      }))
+
+      const success = await storeFeedback(
+        userQuery,
+        aiResponse,
+        'detailed',
+        currentSessionId,
+        feedback.rating,
+        feedback.comment
+      )
+
+      if (success) {
+        setFeedbackStates(prev => ({ 
+          ...prev, 
+          [messageId]: { type: 'detailed', loading: false } 
+        }))
+        
+        // Close detailed feedback form
+        setDetailedFeedback(prev => ({
+          ...prev,
+          [messageId]: { open: false, rating: 5, comment: '' }
+        }))
+        
+        console.log('✅ Detailed feedback submitted successfully')
+      } else {
+        throw new Error('Failed to submit detailed feedback')
+      }
+    } catch (error) {
+      console.error('❌ Error submitting detailed feedback:', error)
+      setFeedbackStates(prev => {
+        const newState = { ...prev }
+        delete newState[messageId]
+        return newState
+      })
+    }
+  }
+
+  const toggleDetailedFeedback = (messageId: string) => {
+    setDetailedFeedback(prev => ({
+      ...prev,
+      [messageId]: {
+        open: !prev[messageId]?.open,
+        rating: prev[messageId]?.rating || 5,
+        comment: prev[messageId]?.comment || ''
+      }
+    }))
   }
 
   const quickActions = [
@@ -289,67 +349,168 @@ export function UnifiedChatInterface() {
                 </div>
               </div>
 
-              {/* Feedback buttons for assistant messages */}
+              {/* Enhanced Feedback System */}
               {message.role === 'assistant' && (
-                <div className="ml-13 flex items-center gap-2">
-                  <div className="text-xs text-gray-500 mr-2">Was this helpful?</div>
-                  <button
-                    onClick={() => {
-                      const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
-                      handleFeedback(message.id, 'helpful', userQuery, message.content)
-                    }}
-                    disabled={feedbackStates[message.id]?.loading}
-                    className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
-                      feedbackStates[message.id]?.type === 'helpful'
-                        ? 'bg-green-100 text-green-700 border border-green-200'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
-                    }`}
-                  >
-                    <ThumbsUp className="w-3 h-3" />
-                    {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'helpful' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      'Helpful'
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
-                      handleFeedback(message.id, 'not_helpful', userQuery, message.content)
-                    }}
-                    disabled={feedbackStates[message.id]?.loading}
-                    className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
-                      feedbackStates[message.id]?.type === 'not_helpful'
-                        ? 'bg-red-100 text-red-700 border border-red-200'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
-                    }`}
-                  >
-                    <ThumbsDown className="w-3 h-3" />
-                    {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'not_helpful' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      'Not helpful'
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
-                      handleFeedback(message.id, 'partial', userQuery, message.content)
-                    }}
-                    disabled={feedbackStates[message.id]?.loading}
-                    className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
-                      feedbackStates[message.id]?.type === 'partial'
-                        ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
-                    }`}
-                  >
-                    <MessageCircle className="w-3 h-3" />
-                    {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'partial' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      'Partially helpful'
-                    )}
-                  </button>
+                <div className="ml-13 space-y-3">
+                  {/* Quick Feedback Buttons */}
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-gray-500 mr-2">Was this helpful?</div>
+                    <button
+                      onClick={() => {
+                        const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                        handleFeedback(message.id, 'helpful', userQuery, message.content)
+                      }}
+                      disabled={feedbackStates[message.id]?.loading}
+                      className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                        feedbackStates[message.id]?.type === 'helpful'
+                          ? 'bg-green-100 text-green-700 border border-green-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                      }`}
+                    >
+                      <ThumbsUp className="w-3 h-3" />
+                      {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'helpful' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        'Helpful'
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                        handleFeedback(message.id, 'not_helpful', userQuery, message.content)
+                      }}
+                      disabled={feedbackStates[message.id]?.loading}
+                      className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                        feedbackStates[message.id]?.type === 'not_helpful'
+                          ? 'bg-red-100 text-red-700 border border-red-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                      }`}
+                    >
+                      <ThumbsDown className="w-3 h-3" />
+                      {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'not_helpful' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        'Not helpful'
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                        handleFeedback(message.id, 'partial', userQuery, message.content)
+                      }}
+                      disabled={feedbackStates[message.id]?.loading}
+                      className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                        feedbackStates[message.id]?.type === 'partial'
+                          ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                      }`}
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'partial' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        'Partially helpful'
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => toggleDetailedFeedback(message.id)}
+                      className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg transition-colors ${
+                        detailedFeedback[message.id]?.open
+                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      Detailed feedback
+                    </button>
+                  </div>
+
+                  {/* Detailed Feedback Form */}
+                  {detailedFeedback[message.id]?.open && (
+                    <div className="bg-gray-50 border rounded-lg p-4 space-y-3">
+                      <div className="text-sm font-medium text-gray-700">Help improve the AI assistant</div>
+                      
+                      {/* Rating */}
+                      <div className="space-y-2">
+                        <label className="text-xs text-gray-600">Rate this response (1-5 stars):</label>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => {
+                                setDetailedFeedback(prev => ({
+                                  ...prev,
+                                  [message.id]: {
+                                    ...prev[message.id],
+                                    rating: star
+                                  }
+                                }))
+                              }}
+                              className={`p-1 rounded transition-colors ${
+                                star <= (detailedFeedback[message.id]?.rating || 5)
+                                  ? 'text-yellow-500'
+                                  : 'text-gray-300 hover:text-yellow-400'
+                              }`}
+                            >
+                              <Star className="w-4 h-4 fill-current" />
+                            </button>
+                          ))}
+                          <span className="ml-2 text-xs text-gray-600">
+                            ({detailedFeedback[message.id]?.rating || 5}/5)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Comment */}
+                      <div className="space-y-2">
+                        <label className="text-xs text-gray-600">
+                          What could be improved? (Your feedback helps train the AI)
+                        </label>
+                        <textarea
+                          value={detailedFeedback[message.id]?.comment || ''}
+                          onChange={(e) => {
+                            setDetailedFeedback(prev => ({
+                              ...prev,
+                              [message.id]: {
+                                ...prev[message.id],
+                                comment: e.target.value
+                              }
+                            }))
+                          }}
+                          placeholder="E.g., 'The response was too vague', 'Missing key information about X', 'Incorrect facts about Y'..."
+                          className="w-full p-2 text-xs border border-gray-300 rounded-md resize-none"
+                          rows={3}
+                        />
+                      </div>
+
+                      {/* Submit/Cancel */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const userQuery = messages[messages.indexOf(message) - 1]?.content || ''
+                            handleDetailedFeedback(message.id, userQuery, message.content)
+                          }}
+                          disabled={feedbackStates[message.id]?.loading}
+                          className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {feedbackStates[message.id]?.loading && feedbackStates[message.id]?.type === 'detailed' ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            'Submit feedback'
+                          )}
+                        </button>
+                        <button
+                          onClick={() => toggleDetailedFeedback(message.id)}
+                          className="px-3 py-1 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

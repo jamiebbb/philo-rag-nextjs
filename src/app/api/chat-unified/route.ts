@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { generateChatCompletion, generateEmbedding } from '@/lib/openai'
 import { CitationFormatter } from '@/lib/citation-formatter'
+import { getRelevantFeedback } from '@/lib/feedback'
 
 // Helper function to extract page numbers from content
 function extractPageFromContent(content: string): number | null {
@@ -39,6 +40,22 @@ interface QueryClassification {
   confidence: number
   reasoning: string
   contentFilter?: 'books' | 'videos' | 'all'
+}
+
+// Helper function to add feedback context to system prompts
+function addFeedbackContext(systemPrompt: string, relevantFeedback: any[]): string {
+  if (!relevantFeedback || relevantFeedback.length === 0) {
+    return systemPrompt
+  }
+
+  const feedbackContext = "\n\n🔄 LEARNING FROM USER FEEDBACK:\nUsers have provided the following corrections to improve responses for similar queries:\n"
+  const feedbackDetails = relevantFeedback.map((feedback: any, index: number) => {
+    return `${index + 1}. Past query: "${feedback.user_query}"\n   User correction: "${feedback.comment}"\n   Feedback type: ${feedback.feedback_type}`
+  }).join('\n\n')
+  
+  const instructions = "\n\n✅ IMPORTANT: Please take these user corrections into account to provide a better response. Learn from past feedback to avoid repeating issues.\n"
+  
+  return systemPrompt + feedbackContext + feedbackDetails + instructions
 }
 
 // Enhanced message with conversation context using AI analysis
@@ -734,7 +751,7 @@ Respond in JSON format:
   }
 }
 
-async function handleRecommend(message: string, classification: QueryClassification, supabase: any, chatHistory: any[] = []) {
+async function handleRecommend(message: string, classification: QueryClassification, supabase: any, chatHistory: any[] = [], relevantFeedback: any[] = []) {
   console.log('🎯 Handling recommendation request with hierarchical search')
   
   // Extract previously recommended books from chat history
@@ -1044,7 +1061,7 @@ ${sources.map((book, i) =>
     `\n\nIMPORTANT: This is a follow-up request for additional recommendations. The books listed above are NEW options that haven't been recommended before. Focus on these fresh recommendations and avoid repeating any previous suggestions.` : 
     ''
 
-  const systemPrompt = `You are a knowledgeable book advisor with access to a personal library. I use advanced AI-powered search that dynamically analyzes queries to find the most relevant books based on entities, topics, genres, and semantic meaning.
+  let systemPrompt = `You are a knowledgeable book advisor with access to a personal library. I use advanced AI-powered search that dynamically analyzes queries to find the most relevant books based on entities, topics, genres, and semantic meaning.
 
 ${contextForAI}${followUpNote}
 
@@ -1058,6 +1075,9 @@ INSTRUCTIONS:
 7. ${isFollowUpRequest ? 'Since this is a follow-up request, provide DIFFERENT books than any previous recommendations' : 'Provide your best recommendations for this request'}
 
 User Request: ${message}`
+
+  // Add feedback context for continuous learning
+  systemPrompt = addFeedbackContext(systemPrompt, relevantFeedback)
 
   const response = await generateChatCompletion([
     { role: 'system', content: systemPrompt },
@@ -1089,7 +1109,7 @@ User Request: ${message}`
   }
 }
 
-async function handleAsk(message: string, classification: QueryClassification, supabase: any) {
+async function handleAsk(message: string, classification: QueryClassification, supabase: any, relevantFeedback: any[] = []) {
   console.log('💬 Handling general question with hybrid approach')
   
   // Search for relevant context first
@@ -1138,7 +1158,7 @@ Content: ${doc.content}`
     ).join('\n\n')
   }
 
-  const systemPrompt = `You are a knowledgeable assistant with access to both a specialized knowledge base and general knowledge.
+  let systemPrompt = `You are a knowledgeable assistant with access to both a specialized knowledge base and general knowledge.
 
 ${contextFromKnowledgeBase ? `RELEVANT CONTENT FROM MY KNOWLEDGE BASE:
 ${contextFromKnowledgeBase}
@@ -1153,6 +1173,9 @@ INSTRUCTIONS:
 5. If no relevant knowledge base content, provide helpful general knowledge but mention the limitation
 
 User Question: ${message}`
+
+  // Add feedback context for continuous learning
+  systemPrompt = addFeedbackContext(systemPrompt, relevantFeedback)
 
   const response = await generateChatCompletion([
     { role: 'system', content: systemPrompt },
@@ -1191,6 +1214,11 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerSupabaseClient()
 
+    // Get relevant feedback for continuous learning
+    console.log('🔄 Retrieving relevant feedback for query improvement...')
+    const relevantFeedback = await getRelevantFeedback(message.trim(), 3)
+    console.log('📊 Found', relevantFeedback.length, 'relevant feedback items')
+
     // Enhanced message with conversation context
     const enhancedMessage = await enhanceMessageWithContext(message, chatHistory)
     
@@ -1209,28 +1237,32 @@ export async function POST(request: NextRequest) {
     switch (classification.type) {
       case 'catalog':
         result = await handleCatalog(queryToUse, classification, supabase)
+        let catalogSystemPrompt = `You are a helpful librarian. ${result.contextForAI}\n\nProvide a clear, organized response showing the available content. Include totals and mention if there are more items available.`
+        catalogSystemPrompt = addFeedbackContext(catalogSystemPrompt, relevantFeedback)
         response = await generateChatCompletion([
-          { role: 'system', content: `You are a helpful librarian. ${result.contextForAI}\n\nProvide a clear, organized response showing the available content. Include totals and mention if there are more items available.` },
+          { role: 'system', content: catalogSystemPrompt },
           { role: 'user', content: queryToUse }
         ])
         break
 
       case 'search':
         result = await handleSearch(queryToUse, classification, supabase)
+        let searchSystemPrompt = `You are a research assistant. ${result.contextForAI}\n\nSummarize the findings and cite specific sources. If no content found, suggest related searches or recommendations.`
+        searchSystemPrompt = addFeedbackContext(searchSystemPrompt, relevantFeedback)
         response = await generateChatCompletion([
-          { role: 'system', content: `You are a research assistant. ${result.contextForAI}\n\nSummarize the findings and cite specific sources. If no content found, suggest related searches or recommendations.` },
+          { role: 'system', content: searchSystemPrompt },
           { role: 'user', content: queryToUse }
         ])
         break
 
       case 'recommend':
-        result = await handleRecommend(queryToUse, classification, supabase, chatHistory)
+        result = await handleRecommend(queryToUse, classification, supabase, chatHistory, relevantFeedback)
         response = result.directResponse
         break
 
       case 'ask':
       default:
-        result = await handleAsk(queryToUse, classification, supabase)
+        result = await handleAsk(queryToUse, classification, supabase, relevantFeedback)
         response = result.directResponse
         break
     }
@@ -1244,10 +1276,12 @@ export async function POST(request: NextRequest) {
         queryType: classification.type,
         confidence: classification.confidence,
         reasoning: classification.reasoning,
+        feedbackApplied: relevantFeedback.length,
+        learningFromFeedback: relevantFeedback.length > 0,
         ...result.metadata
       },
       classification,
-      method: 'clean_4_bucket_system'
+      method: 'unified_with_feedback_learning'
     })
 
   } catch (error) {
