@@ -1,18 +1,19 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Server, Monitor, FileText, Youtube } from 'lucide-react'
+import { Server, Monitor, FileText, Youtube, Zap } from 'lucide-react'
 import { DocumentUpload } from './DocumentUpload'
 import DocumentUploadClient from './DocumentUploadClient'
 import { YouTubeUpload } from './YouTubeUpload'
+import { SmartUpload } from './SmartUpload'
 
 // Browser environment check
 const isBrowser = typeof window !== 'undefined'
 
-type TabType = 'server' | 'client' | 'youtube'
+type TabType = 'smart' | 'server' | 'client' | 'youtube'
 
 export default function UploadTabs() {
-  const [activeTab, setActiveTab] = useState<TabType>('client')
+  const [activeTab, setActiveTab] = useState<TabType>('smart')
   const [isMounted, setIsMounted] = useState(false)
 
   // Only mount the component on the client side
@@ -36,18 +37,25 @@ export default function UploadTabs() {
 
   const tabs = [
     {
+      id: 'smart' as TabType,
+      name: 'Smart Upload',
+      icon: Zap,
+      description: 'Automatic file size detection & routing (Recommended)',
+      color: 'purple',
+      recommended: true
+    },
+    {
       id: 'client' as TabType,
       name: 'Client-Side Processing',
       icon: Monitor,
-      description: 'Process large files locally (Recommended for books)',
-      color: 'green',
-      recommended: true
+      description: 'Process large files locally (Manual mode)',
+      color: 'green'
     },
     {
       id: 'server' as TabType,
       name: 'Server-Side Processing',
       icon: Server,
-      description: 'Process small files on server (< 2MB)',
+      description: 'Process small files on server (Manual mode)',
       color: 'blue'
     },
     {
@@ -66,7 +74,7 @@ export default function UploadTabs() {
         <h1 className="text-3xl font-bold text-gray-800 mb-2">Document Upload Hub</h1>
         <p className="text-gray-600 mb-6">Choose your preferred processing method based on file size and type</p>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
@@ -82,7 +90,7 @@ export default function UploadTabs() {
                 }`}
               >
                 {tab.recommended && (
-                  <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                  <span className="absolute -top-2 -right-2 bg-purple-500 text-white text-xs px-2 py-1 rounded-full">
                     Recommended
                   </span>
                 )}
@@ -102,6 +110,13 @@ export default function UploadTabs() {
                 
                 {/* Feature highlights */}
                 <div className="mt-3 text-xs">
+                  {tab.id === 'smart' && (
+                    <div className="space-y-1">
+                      <div className="text-purple-600">✓ Auto size detection</div>
+                      <div className="text-purple-600">✓ Optimal routing</div>
+                      <div className="text-purple-600">✓ Any file size</div>
+                    </div>
+                  )}
                   {tab.id === 'client' && (
                     <div className="space-y-1">
                       <div className="text-green-600">✓ No file size limits</div>
@@ -113,7 +128,7 @@ export default function UploadTabs() {
                     <div className="space-y-1">
                       <div className="text-blue-600">✓ Simple upload</div>
                       <div className="text-blue-600">✓ Server processing</div>
-                      <div className="text-orange-600">⚠ Limited to 2MB</div>
+                      <div className="text-orange-600">⚠ Limited to 4MB</div>
                     </div>
                   )}
                   {tab.id === 'youtube' && (
@@ -132,6 +147,7 @@ export default function UploadTabs() {
 
       {/* Tab Content */}
       <div className="transition-opacity duration-300">
+        {activeTab === 'smart' && <SmartUpload />}
         {activeTab === 'client' && <DocumentUploadClient />}
         {activeTab === 'server' && <DocumentUpload />}
         {activeTab === 'youtube' && <YouTubeUpload />}
@@ -144,8 +160,9 @@ export default function UploadTabs() {
           <div>
             <h4 className="font-semibold text-blue-800 mb-1">Processing Methods Comparison</h4>
             <div className="text-sm text-blue-700 space-y-1">
+              <p><strong>Smart Upload:</strong> Automatically detects file size and uses optimal processing method. Files ≤4MB use server processing, files {'>'} 4MB use client processing.</p>
               <p><strong>Client-Side:</strong> Best for large PDF books (10MB+). Processes files in your browser using PDF.js.</p>
-              <p><strong>Server-Side:</strong> Best for small documents (&lt;2MB). Uses Vercel serverless functions.</p>
+              <p><strong>Server-Side:</strong> Best for small documents ({'<'}4MB). Uses Vercel serverless functions.</p>
               <p><strong>YouTube:</strong> Extracts transcripts using SUPADATA API and corrects grammar with GPT-4o-mini.</p>
             </div>
           </div>
