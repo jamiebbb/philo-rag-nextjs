@@ -114,95 +114,57 @@ async function retrieveTool(query: string, supabase: any): Promise<{content: str
       for (const term of searchTerms) {
         console.log(`🔍 Searching for term: "${term}"`)
         
-        // Search all metadata fields in parallel
-        const [titleSearch, authorSearch, topicSearch, genreSearch, tagsSearch, docTypeSearch] = await Promise.all([
-          supabase.from('documents_enhanced').select('*').ilike('title', `%${term}%`).limit(3),
-          supabase.from('documents_enhanced').select('*').ilike('author', `%${term}%`).limit(3),
-          supabase.from('documents_enhanced').select('*').ilike('topic', `%${term}%`).limit(3),
-          supabase.from('documents_enhanced').select('*').ilike('genre', `%${term}%`).limit(3),
-          supabase.from('documents_enhanced').select('*').ilike('tags', `%${term}%`).limit(3),
-          supabase.from('documents_enhanced').select('*').ilike('doc_type', `%${term}%`).limit(3)
-        ])
+        // Try individual searches first to debug
+        const titleSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('title', `%${term}%`)
+          .limit(2)
+          
+        const authorSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('author', `%${term}%`)
+          .limit(2)
+          
+        const topicSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('topic', `%${term}%`)
+          .limit(2)
+          
+        const genreSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('genre', `%${term}%`)
+          .limit(2)
+          
+        const tagsSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('tags', `%${term}%`)
+          .limit(2)
+          
+        const docTypeSearch = await supabase
+          .from('documents_enhanced')
+          .select('*')
+          .ilike('doc_type', `%${term}%`)
+          .limit(2)
 
-        // Dynamic scoring based on term relevance and field importance
-        const calculateDynamicScore = (doc: any, field: string, term: string) => {
-          const content = (doc[field] || '').toLowerCase()
-          const queryTerm = term.toLowerCase()
-          
-          // Base scores by field importance
-          const fieldWeights = {
-            title: 0.9,      // Highest weight - title is most important
-            author: 0.8,     // High weight - author queries are specific
-            topic: 0.7,      // High weight - topic is core content
-            genre: 0.6,      // Medium weight - broader categorization
-            tags: 0.5,       // Medium weight - supplementary info
-            doc_type: 0.4    // Lower weight - general categorization
-          }
-          
-          // Relevance multipliers based on match quality
-          let relevanceMultiplier = 0.5 // Base relevance
-          
-          if (content === queryTerm) {
-            relevanceMultiplier = 1.0 // Exact match
-          } else if (content.includes(` ${queryTerm} `) || content.startsWith(`${queryTerm} `) || content.endsWith(` ${queryTerm}`)) {
-            relevanceMultiplier = 0.9 // Whole word match
-          } else if (content.includes(queryTerm)) {
-            relevanceMultiplier = 0.7 // Partial match
-          }
-          
-          // Query context bonus (if term appears in query multiple times or is emphasized)
-          const queryLower = query.toLowerCase()
-          if (queryLower.split(' ').filter(word => word.includes(queryTerm)).length > 1) {
-            relevanceMultiplier *= 1.1 // Boost for repeated terms
-          }
-          
-          return (fieldWeights[field as keyof typeof fieldWeights] || 0.3) * relevanceMultiplier
-        }
-
-        // Apply dynamic scoring
+        // Combine all results with proper similarity scoring
         const termDocs = [
-          ...(titleSearch.data || []).map((doc: any) => ({ 
-            ...doc, 
-            similarity: calculateDynamicScore(doc, 'title', term),
-            match_type: 'title',
-            match_term: term
-          })),
-          ...(authorSearch.data || []).map((doc: any) => ({ 
-            ...doc, 
-            similarity: calculateDynamicScore(doc, 'author', term),
-            match_type: 'author',
-            match_term: term
-          })),
-          ...(topicSearch.data || []).map((doc: any) => ({ 
-            ...doc, 
-            similarity: calculateDynamicScore(doc, 'topic', term),
-            match_type: 'topic',
-            match_term: term
-          })),
-          ...(genreSearch.data || []).map((doc: any) => ({ 
-            ...doc, 
-            similarity: calculateDynamicScore(doc, 'genre', term),
-            match_type: 'genre',
-            match_term: term
-          })),
-          ...(tagsSearch.data || []).map((doc: any) => ({ 
-            ...doc, 
-            similarity: calculateDynamicScore(doc, 'tags', term),
-            match_type: 'tags',
-            match_term: term
-          })),
-          ...(docTypeSearch.data || []).map((doc: any) => ({ 
-            ...doc, 
-            similarity: calculateDynamicScore(doc, 'doc_type', term),
-            match_type: 'doc_type',
-            match_term: term
-          }))
+          ...(titleSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.95, match_type: 'title' })),
+          ...(authorSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.90, match_type: 'author' })),
+          ...(topicSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.85, match_type: 'topic' })),
+          ...(genreSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.85, match_type: 'genre' })),
+          ...(tagsSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.80, match_type: 'tags' })),
+          ...(docTypeSearch.data || []).map((doc: any) => ({ ...doc, similarity: 0.75, match_type: 'doc_type' }))
         ]
 
         if (termDocs.length > 0) {
-          console.log(`📊 Found ${termDocs.length} docs with "${term}" in metadata (dynamic scoring):`)
+          console.log(`📊 Found ${termDocs.length} docs with "${term}" in metadata:`)
           termDocs.forEach((doc: any) => {
-            console.log(`   - "${doc.title}" by ${doc.author} (${doc.match_type}: ${doc.similarity.toFixed(3)})`)
+            console.log(`   - "${doc.title}" by ${doc.author}`)
           })
           metadataDocs.push(...termDocs)
         } else {
@@ -301,7 +263,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
-    console.log('💬 Smart Agentic Chat API called with message:', message.substring(0, 100) + '...')
+    console.log('💬 AGENTIC Chat API called with message:', message.substring(0, 100) + '...')
     console.log('📜 Chat history length:', chatHistory.length)
 
     // Get server-side Supabase client
@@ -336,95 +298,50 @@ export async function POST(request: NextRequest) {
       conversationContext += '\n'
     }
 
-    // IMPROVED AGENTIC DECISION: Use pattern matching + AI for better decisions
-    console.log('🤖 Using improved agentic approach - analyzing query intent')
+    // AGENTIC APPROACH: Let AI decide whether to retrieve documents
+    console.log('🤖 Using agentic approach - AI will decide whether to retrieve documents')
     
-    // Pattern-based quick decisions
-    const quickDecisionPatterns = {
-      // Definitely retrieve patterns
-      mustRetrieve: [
-        /\b(based on|according to|from|in)\s+(your\s+)?(knowledge|context|documents?|database|bank)\b/i,
-        /\b(tell me about|explain|what is|who is|when did|where|why|how many|how much)\b/i,
-        /\b(find|search|look up|show me|give me|list)\b/i,
-        /\b(recommend|suggest|analysis|data|statistics|research)\b/i,
-        /\b(book|document|paper|study|report|article)\b.*\b(by|about|on)\b/i
-      ],
-      // Definitely don't retrieve patterns  
-      mustDirect: [
-        /^(hi|hello|hey|good morning|good afternoon|good evening)\b/i,
-        /^(thank you|thanks|bye|goodbye|see you)\b/i,
-        /\b(how are you|what's up|how's it going)\b/i,
-        /\b(can you help|what can you do|what are your capabilities)\b/i
-      ]
-    }
-
-    let quickDecision = null
-    
-    // Check quick patterns
-    if (quickDecisionPatterns.mustRetrieve.some(pattern => pattern.test(message))) {
-      quickDecision = 'RETRIEVE'
-      console.log('🤖 Quick decision: RETRIEVE (pattern matched)')
-    } else if (quickDecisionPatterns.mustDirect.some(pattern => pattern.test(message))) {
-      quickDecision = 'DIRECT'
-      console.log('🤖 Quick decision: DIRECT (pattern matched)')
-    }
-
-    let finalDecision = quickDecision
-
-    // If no quick decision, use AI for nuanced analysis
-    if (!quickDecision) {
-      const decisionPrompt = `You are an AI assistant that decides whether to search a document database to answer questions. You have access to a curated knowledge bank for an asset management company.
+    // Step 1: Ask AI if it needs to retrieve documents (with conversation context)
+    const decisionPrompt = `You are an AI assistant that needs to decide whether to search a document database to answer a user's question.
 
 ${conversationContext}
 
 Current user message: "${message}"
 
-Analysis Guidelines:
-- RETRIEVE: Questions about specific topics, companies, people, books, research, analysis, data, or follow-up questions about previously mentioned subjects
-- DIRECT: Greetings, personal questions, system capabilities, general conversation, or meta-questions about the assistant itself
-
-Consider:
-1. Does this require specific domain knowledge from documents?
-2. Is this asking for information that would be in an asset management knowledge bank?
-3. Could this be asking about a specific book, author, company, or financial concept?
-4. Is this a follow-up question referring to previous context?
+Consider both the current message AND the conversation context. Respond with EXACTLY ONE WORD:
+- "RETRIEVE" if this question requires searching specific documents (e.g., questions about specific topics, books, research, follow-up questions about previously mentioned topics)
+- "DIRECT" if this is a greeting, general conversation, or something you can answer without needing specific documents
 
 Examples:
-- "Hello" → DIRECT
-- "What is value investing?" → RETRIEVE  
-- "Tell me about Warren Buffett's philosophy" → RETRIEVE
-- "How are you?" → DIRECT
-- "What companies are mentioned in our database?" → RETRIEVE
-- "Can you search for information about ESG?" → RETRIEVE
+- "hello" → DIRECT
+- "how are you?" → DIRECT  
+- "what is philosophy?" → RETRIEVE
+- "tell me about machine learning" → RETRIEVE
+- "good morning" → DIRECT
+- "how many employees do they have?" (after discussing a company) → RETRIEVE
 
-Respond with exactly one word: RETRIEVE or DIRECT`
+Your response (one word only):`
 
-      try {
-        const decision = await generateChatCompletion([
-          { role: 'system', content: decisionPrompt },
-          { role: 'user', content: message }
-        ])
-        
-        finalDecision = decision.trim().toUpperCase().includes('RETRIEVE') ? 'RETRIEVE' : 'DIRECT'
-        console.log(`🤖 AI decision: "${finalDecision}" (from response: "${decision.trim()}")`)
-      } catch (error) {
-        console.warn('⚠️ AI decision failed, defaulting to RETRIEVE:', error)
-        finalDecision = 'RETRIEVE' // Safe default for knowledge bank
-      }
-    }
+    const decision = await generateChatCompletion([
+      { role: 'system', content: decisionPrompt },
+      { role: 'user', content: message }
+    ])
+
+    console.log(`🤖 AI decision: "${decision.trim()}"`)
 
     let retrieveResult = null
     let sources: any[] = []
     let documentsFound = 0
     let searchMethod = 'none'
 
-    // Execute based on decision
-    if (finalDecision === 'RETRIEVE') {
-      console.log('🤖 Decision: Retrieving documents from knowledge base')
+    // Step 2: Based on AI decision, retrieve documents or proceed directly
+    if (decision.trim().toUpperCase().includes('RETRIEVE')) {
+      console.log('🤖 AI decided to retrieve documents')
       
-      // Enhanced search query with context
+      // For retrieval, combine current message with recent conversation context for better search
       let searchQuery = message
       if (conversationContext) {
+        // Extract key entities/topics from recent conversation for enhanced search
         const contextualSearchPrompt = `Given this conversation context and current question, create an enhanced search query that includes relevant entities/topics from the conversation:
 
 ${conversationContext}
@@ -453,59 +370,40 @@ Enhanced search query:`
       retrieveResult = await retrieveTool(searchQuery, supabase)
       sources = retrieveResult.sources
       documentsFound = sources.length
-      searchMethod = 'smart_agentic_retrieve'
+      searchMethod = 'agentic_retrieve_contextual'
     } else {
-      console.log('🤖 Decision: Responding directly without document retrieval')
-      searchMethod = 'smart_agentic_direct'
+      console.log('🤖 AI decided to respond directly without retrieving documents')
+      searchMethod = 'agentic_direct'
     }
 
-    // Generate response based on decision
+    // Step 3: Generate final response with full conversation context
     let systemPrompt
-    if (finalDecision === 'RETRIEVE' && documentsFound > 0 && retrieveResult) {
-      systemPrompt = `You are a knowledge base assistant for an asset management company with access to a curated knowledge bank. You retrieved ${documentsFound} relevant documents to answer the user's question.
+    if (retrieveResult && documentsFound > 0) {
+      // AI decided to retrieve documents - use them in context
+      systemPrompt = `You are an expert AI assistant. You have retrieved relevant documents from the knowledge base to help answer the user's question.
 
 ${conversationContext}
 
-RETRIEVED CONTEXT FROM KNOWLEDGE BASE:
+RETRIEVED CONTEXT:
 ${retrieveResult.content}
 
-CRITICAL INSTRUCTIONS:
-1. Base your response PRIMARILY on the retrieved documents
-2. When you say "based on my knowledge" or "based on the context", you are referring to the retrieved documents
-3. Cite specific documents when making claims
-4. If the retrieved documents don't fully answer the question, say so and explain what information is available
-5. Provide detailed, analytical responses using the document content
-6. Maintain conversation continuity with the context
+Based on the conversation history and retrieved context, provide a comprehensive answer that:
+1. Uses information from the retrieved documents as your primary source
+2. References previous conversation context when relevant (e.g., "they" refers to previously mentioned company)
+3. Cites specific sources when possible
+4. Provides detailed explanations and examples from the context
+5. Maintains conversational continuity
 
 USER QUESTION: ${message}`
-    } else if (finalDecision === 'RETRIEVE' && (documentsFound === 0 || !retrieveResult)) {
-      systemPrompt = `You are a knowledge base assistant for an asset management company. 
-
-${conversationContext}
-
-I searched the knowledge base for: "${message}" but found no relevant documents.
-
-Respond that you don't have information about this topic in the current knowledge base, and suggest:
-1. Trying different search terms or keywords
-2. Checking if relevant documents have been uploaded to the knowledge bank
-3. Contacting the knowledge base administrator if they believe the information should be available
-
-Do not provide general AI knowledge - stay within the role of a knowledge base assistant.`
     } else {
-      // DIRECT response
-      systemPrompt = `You are a helpful AI assistant that manages a knowledge base for an asset management company.
+      // AI decided not to retrieve - respond directly with conversation context
+      systemPrompt = `You are a helpful AI assistant with memory of the current conversation.
 
 ${conversationContext}
 
 Current user message: "${message}"
 
-Respond naturally and helpfully. You can:
-- Answer greetings and casual conversation
-- Explain your capabilities as a knowledge base assistant
-- Offer to search the knowledge bank if they ask about specific topics
-- Reference previous conversation context when relevant
-
-If they ask about specific financial topics, companies, or investment concepts, offer to search the knowledge base for detailed information.`
+Respond naturally and helpfully, taking into account the conversation history. Reference previous topics when relevant (e.g., if they ask "tell me more" after discussing a topic). If this seems like a question that might be answered by documents in a knowledge base, offer to search for specific information.`
     }
 
     // Add feedback context if available
@@ -530,13 +428,11 @@ If they ask about specific financial topics, companies, or investment concepts, 
       documentsFound,
       feedbackApplied: relevantFeedback ? relevantFeedback.length : 0,
       searchMethod,
-      conversationContextUsed: chatHistory.length > 0,
-      decision: finalDecision,
-      decisionMethod: quickDecision ? 'pattern_based' : 'ai_analysis'
+      conversationContextUsed: chatHistory.length > 0
     })
 
   } catch (error) {
-    console.error('Error in smart agentic chat API:', error)
+    console.error('Error in agentic chat API:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

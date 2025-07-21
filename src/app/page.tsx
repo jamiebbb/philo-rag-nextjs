@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { DocumentUpload } from '@/components/DocumentUpload'
-import { UnifiedChatInterface } from '@/components/UnifiedChatInterface'
+import { ChatInterface } from '@/components/ChatInterface'
 import { DocumentManager } from '@/components/DocumentManager'
 import { YouTubeUpload } from '@/components/YouTubeUpload'
 import { DatabaseView } from '@/components/DatabaseView'
@@ -52,7 +52,7 @@ export default function Home() {
 
         {/* Main Content */}
         <div className="max-w-6xl mx-auto">
-          {activeTab === 'chat' && <UnifiedChatInterface />}
+          {activeTab === 'chat' && <ChatInterface />}
           {activeTab === 'upload' && <DocumentUpload />}
           {activeTab === 'youtube' && <YouTubeUpload />}
           {activeTab === 'manage' && <DocumentManager />}

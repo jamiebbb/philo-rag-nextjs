@@ -1,56 +1,34 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET() {
   try {
     const supabase = createServerSupabaseClient()
-    const { id: documentId } = await params
 
-    // Delete the document
-    const { error } = await supabase
-      .from('documents_enhanced')
-      .delete()
-      .eq('id', documentId)
-
-    if (error) {
-      console.error('Error deleting document:', error)
-      return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, message: 'Document deleted successfully' })
-
-  } catch (error) {
-    console.error('Error in delete document API:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const supabase = createServerSupabaseClient()
-    const { id: documentId } = await params
-
-    const { data: document, error } = await supabase
+    const { data: documents, error } = await supabase
       .from('documents_enhanced')
       .select('*')
-      .eq('id', documentId)
-      .single()
+      .order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching document:', error)
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+      console.error('Error fetching documents:', error)
+      return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 })
     }
 
-    return NextResponse.json({ document })
+    // Calculate chunk counts (in this setup, each document is a chunk)
+    const documentsWithChunkCounts = documents?.map(doc => ({
+      ...doc,
+      chunk_count: 1, // Each document is one chunk in this setup
+      content: doc.content || '' // Ensure content is never null
+    })) || []
+
+    return NextResponse.json({
+      documents: documentsWithChunkCounts,
+      total: documentsWithChunkCounts.length
+    })
 
   } catch (error) {
-    console.error('Error in get document API:', error)
+    console.error('Error in documents API:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 } 
