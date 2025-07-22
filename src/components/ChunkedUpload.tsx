@@ -2,12 +2,12 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, FileText, X, Eye, CheckCircle, AlertCircle, Loader2, Info, Zap, Cpu } from 'lucide-react'
+import { Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Info, Package, Zap } from 'lucide-react'
 import { DocumentMetadata } from '@/types'
-import { smartUploadPDFsV2, getUploadMethodV2, UploadResult } from '@/lib/smart-upload-handler-v2'
+import { chunkedUploadPDFs, getChunkedUploadMethod, ChunkedUploadResult } from '@/lib/chunked-upload-handler'
 import { formatFileSize } from '@/lib/utils'
 
-export function SmartUpload() {
+export function ChunkedUpload() {
   const [files, setFiles] = useState<File[]>([])
   const [metadata, setMetadata] = useState<DocumentMetadata>({
     title: '',
@@ -21,7 +21,7 @@ export function SmartUpload() {
   })
   
   const [uploadMethod, setUploadMethod] = useState<{
-    method: 'direct-upload' | 'storage-upload'
+    method: 'chunked-upload' | 'direct-upload'
     reason: string
     totalSizeMB: number
   } | null>(null)
@@ -33,13 +33,13 @@ export function SmartUpload() {
   
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ stage: '', progress: 0, message: '' })
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null)
+  const [uploadResult, setUploadResult] = useState<ChunkedUploadResult | null>(null)
   const [error, setError] = useState('')
 
   // Update upload method when files change
   useEffect(() => {
     if (files.length > 0) {
-      const method = getUploadMethodV2(files)
+      const method = getChunkedUploadMethod(files)
       setUploadMethod(method)
     } else {
       setUploadMethod(null)
@@ -125,7 +125,7 @@ export function SmartUpload() {
     setUploadResult(null)
 
     try {
-      const result = await smartUploadPDFsV2(files, metadata, {
+      const result = await chunkedUploadPDFs(files, metadata, {
         chunkSize,
         chunkOverlap,
         splitterType,
@@ -181,16 +181,16 @@ export function SmartUpload() {
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">
-        📄 Smart PDF Upload
+        📦 Chunked PDF Upload
       </h2>
       
       <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
         <div className="flex items-center gap-2 text-blue-700 text-sm">
           <Info className="w-4 h-4" />
-          <span className="font-medium">Automatic File Size Detection</span>
+          <span className="font-medium">Handles Any File Size</span>
         </div>
         <p className="text-blue-600 text-sm mt-1">
-          Files ≤4MB use direct upload. Files {'>'}4MB use storage upload then server processing with pdf-parse.
+          Files ≤4.5MB use direct upload. Files {'>'}4.5MB are split into 2MB chunks and uploaded separately.
         </p>
       </div>
 
@@ -214,7 +214,7 @@ export function SmartUpload() {
                 Drag & drop PDF files here, or click to select
               </p>
               <p className="text-sm text-gray-500">
-                Supports files of any size • Automatic processing method selection
+                No file size limits • Automatic chunking for large files
               </p>
             </div>
           )}
@@ -229,15 +229,15 @@ export function SmartUpload() {
                 <div className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm ${
                   uploadMethod.method === 'direct-upload' 
                     ? 'bg-green-100 text-green-700 border border-green-200'
-                    : 'bg-blue-100 text-blue-700 border border-blue-200'
+                    : 'bg-orange-100 text-orange-700 border border-orange-200'
                 }`}>
                   {uploadMethod.method === 'direct-upload' ? (
                     <Zap className="w-4 h-4" />
                   ) : (
-                    <Cpu className="w-4 h-4" />
+                    <Package className="w-4 h-4" />
                   )}
                   <span className="font-medium">
-                    {uploadMethod.method === 'direct-upload' ? 'Direct Upload' : 'Storage Upload'}
+                    {uploadMethod.method === 'direct-upload' ? 'Direct Upload' : 'Chunked Upload'}
                   </span>
                   <span className="text-xs opacity-75">
                     ({uploadMethod.totalSizeMB.toFixed(1)}MB)
@@ -258,9 +258,9 @@ export function SmartUpload() {
                       <p className="font-medium text-gray-900">{file.name}</p>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <span>{formatFileSize(file.size)}</span>
-                        {file.size > 4 * 1024 * 1024 && (
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                            Large File
+                        {file.size > 4.5 * 1024 * 1024 && (
+                          <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
+                            Will be chunked ({Math.ceil(file.size / (2 * 1024 * 1024))} chunks)
                           </span>
                         )}
                       </div>
@@ -278,7 +278,7 @@ export function SmartUpload() {
             
             {uploadMethod && (
               <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded-lg">
-                <strong>Processing Method:</strong> {uploadMethod.reason}
+                <strong>Upload Method:</strong> {uploadMethod.reason}
               </div>
             )}
           </div>
@@ -507,8 +507,8 @@ export function SmartUpload() {
               <p>📄 Documents: {uploadResult.documentsCount}</p>
               <p>📝 Chunks: {uploadResult.chunksCount}</p>
               <p>⚙️ Method: {uploadResult.uploadMethod}</p>
-              {uploadResult.errorCount && uploadResult.errorCount > 0 && (
-                <p>⚠️ Errors: {uploadResult.errorCount}</p>
+              {uploadResult.sessionId && (
+                <p>🔗 Session: {uploadResult.sessionId}</p>
               )}
             </div>
           ) : (

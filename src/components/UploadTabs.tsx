@@ -1,16 +1,17 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Server, Monitor, FileText, Youtube, Zap } from 'lucide-react'
+import { Server, Monitor, FileText, Youtube, Zap, Package } from 'lucide-react'
 import { DocumentUpload } from './DocumentUpload'
 import DocumentUploadClient from './DocumentUploadClient'
 import { YouTubeUpload } from './YouTubeUpload'
 import { SmartUpload } from './SmartUpload'
+import { ChunkedUpload } from './ChunkedUpload'
 
 // Browser environment check
 const isBrowser = typeof window !== 'undefined'
 
-type TabType = 'smart' | 'server' | 'client' | 'youtube'
+type TabType = 'smart' | 'chunked' | 'server' | 'client' | 'youtube'
 
 export default function UploadTabs() {
   const [activeTab, setActiveTab] = useState<TabType>('smart')
@@ -43,6 +44,13 @@ export default function UploadTabs() {
       description: 'Automatic file size detection & routing (Recommended)',
       color: 'purple',
       recommended: true
+    },
+    {
+      id: 'chunked' as TabType,
+      name: 'Chunked Upload',
+      icon: Package,
+      description: 'Break large files into chunks for Vercel compatibility',
+      color: 'orange'
     },
     {
       id: 'client' as TabType,
@@ -113,8 +121,15 @@ export default function UploadTabs() {
                   {tab.id === 'smart' && (
                     <div className="space-y-1">
                       <div className="text-purple-600">✓ Auto size detection</div>
-                      <div className="text-purple-600">✓ Optimal routing</div>
+                      <div className="text-purple-600">✓ Storage + pdf-parse</div>
                       <div className="text-purple-600">✓ Any file size</div>
+                    </div>
+                  )}
+                  {tab.id === 'chunked' && (
+                    <div className="space-y-1">
+                      <div className="text-orange-600">✓ Handles Vercel limits</div>
+                      <div className="text-orange-600">✓ 2MB chunks</div>
+                      <div className="text-orange-600">✓ Session tracking</div>
                     </div>
                   )}
                   {tab.id === 'client' && (
@@ -148,6 +163,7 @@ export default function UploadTabs() {
       {/* Tab Content */}
       <div className="transition-opacity duration-300">
         {activeTab === 'smart' && <SmartUpload />}
+        {activeTab === 'chunked' && <ChunkedUpload />}
         {activeTab === 'client' && <DocumentUploadClient />}
         {activeTab === 'server' && <DocumentUpload />}
         {activeTab === 'youtube' && <YouTubeUpload />}
@@ -160,7 +176,8 @@ export default function UploadTabs() {
           <div>
             <h4 className="font-semibold text-blue-800 mb-1">Processing Methods Comparison</h4>
             <div className="text-sm text-blue-700 space-y-1">
-              <p><strong>Smart Upload:</strong> Automatically detects file size and uses optimal processing method. Files ≤4MB use server processing, files {'>'} 4MB use client processing.</p>
+              <p><strong>Smart Upload:</strong> Automatically detects file size and uses optimal processing method. Files ≤4MB use direct upload, files {'>'} 4MB use storage upload + server processing with pdf-parse.</p>
+              <p><strong>Chunked Upload:</strong> Splits large files into 2MB chunks to bypass Vercel's 4.5MB limit. Uses upload sessions to track progress and reassemble files server-side.</p>
               <p><strong>Client-Side:</strong> Best for large PDF books (10MB+). Processes files in your browser using PDF.js.</p>
               <p><strong>Server-Side:</strong> Best for small documents ({'<'}4MB). Uses Vercel serverless functions.</p>
               <p><strong>YouTube:</strong> Extracts transcripts using SUPADATA API and corrects grammar with GPT-4o-mini.</p>
