@@ -1,7 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import UploadTabs from '@/components/UploadTabs'
+import dynamic from 'next/dynamic'
+
+// Dynamic import to prevent SSR issues with PDF.js and browser APIs
+const UploadTabs = dynamic(() => import('@/components/UploadTabs'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center p-8">
+      <div className="animate-pulse text-gray-500">Loading upload interface...</div>
+    </div>
+  )
+})
 import { UnifiedChatInterface } from '@/components/UnifiedChatInterface'
 import { DocumentManager } from '@/components/DocumentManager'
 import { YouTubeUpload } from '@/components/YouTubeUpload'
