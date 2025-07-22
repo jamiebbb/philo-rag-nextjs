@@ -4,7 +4,7 @@ import { generateEmbedding } from '@/lib/openai'
 
 // This route handles pre-processed chunks from client-side PDF processing
 // Perfect for large files that exceed Vercel's 4MB FormData limit
-export const maxDuration = 60
+export const maxDuration = 120
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`📝 Processing ${chunks.length} chunks for upload...`)
 
-    // Process chunks in batches to avoid overwhelming the system
-    const BATCH_SIZE = 10
+    // Process chunks in optimized batches for better performance
+    const BATCH_SIZE = 25
     let successCount = 0
     let errorCount = 0
 

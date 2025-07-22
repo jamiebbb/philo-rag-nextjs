@@ -4,7 +4,7 @@ import { generateEmbedding } from '@/lib/openai'
 import { RecursiveCharacterTextSplitter, CharacterTextSplitter } from 'langchain/text_splitter'
 import { parsePDF, ParserType } from '@/lib/pdf-parsers'
 
-export const maxDuration = 60
+export const maxDuration = 120
 
 export async function POST(request: NextRequest) {
   try {
@@ -116,8 +116,8 @@ export async function POST(request: NextRequest) {
     // Generate document ID
     const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2)}`
     
-    // Process chunks in batches
-    const BATCH_SIZE = 5
+    // Process chunks in optimized batches for better performance
+    const BATCH_SIZE = 20
     let totalStoredChunks = 0
 
     for (let i = 0; i < textChunks.length; i += BATCH_SIZE) {

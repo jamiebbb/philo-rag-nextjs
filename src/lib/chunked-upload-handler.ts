@@ -65,10 +65,15 @@ export async function chunkedUploadPDFs(
     
   } catch (error) {
     console.error('❌ Chunked upload error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('aborted')
+    
     return {
       success: false,
       uploadMethod: 'direct-upload',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: isTimeout 
+        ? 'Upload timed out. Large files may take longer to process. Please try again or contact support if the issue persists.'
+        : errorMessage
     }
   }
 }
@@ -156,7 +161,7 @@ async function handleChunkedUpload(
       }
       
       // Process the completed upload
-      onProgress?.('processing', 85, `Processing ${file.name}...`)
+      onProgress?.('processing', 85, `Processing ${file.name} - reassembling file and generating embeddings...`)
       const result = await processCompletedChunkedUpload(sessionId, metadata, options)
       
       if (!result.success) {

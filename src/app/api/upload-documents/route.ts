@@ -4,8 +4,8 @@ import { generateEmbedding } from '@/lib/openai'
 import { RecursiveCharacterTextSplitter, CharacterTextSplitter } from 'langchain/text_splitter'
 import { parsePDF, ParserType } from '@/lib/pdf-parsers'
 
-// Configure timeout for this route (60 seconds max for Vercel hobby plan)
-export const maxDuration = 60
+// Configure timeout for this route (120 seconds for large file processing)
+export const maxDuration = 120
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Process files in smaller batches to avoid timeouts
-    const BATCH_SIZE = 5 // Reduced batch size for faster processing
+    // Process files in optimized batches for better performance
+    const BATCH_SIZE = 20 // Increased batch size for faster processing
     let allChunks: string[] = []
     let allMetadata: any[] = []
 

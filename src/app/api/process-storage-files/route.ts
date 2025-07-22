@@ -4,8 +4,8 @@ import { generateEmbedding } from '@/lib/openai'
 import { RecursiveCharacterTextSplitter, CharacterTextSplitter } from 'langchain/text_splitter'
 import { parsePDF, ParserType } from '@/lib/pdf-parsers'
 
-// Configure timeout for this route
-export const maxDuration = 60
+// Configure timeout for this route (120 seconds for large file processing)
+export const maxDuration = 120
 
 export async function POST(request: NextRequest) {
   try {
@@ -131,8 +131,8 @@ export async function POST(request: NextRequest) {
     // Generate document ID prefix for all chunks
     const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2)}`
     
-    // Process chunks in batches - same logic as existing upload
-    const BATCH_SIZE = 5
+    // Process chunks in optimized batches for better performance
+    const BATCH_SIZE = 20
     let totalChunks = 0
 
     for (let i = 0; i < allChunks.length; i += BATCH_SIZE) {
