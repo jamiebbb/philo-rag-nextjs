@@ -1,9 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Server, Monitor, FileText, Youtube, Zap, Package } from 'lucide-react'
-
-// Components
+import { Server, Monitor, FileText, Youtube, Package } from 'lucide-react'
 import { DocumentUpload } from './DocumentUpload'
 import { ChunkedUpload } from './ChunkedUpload'
 import DocumentUploadClient from './DocumentUploadClient'
@@ -20,37 +18,65 @@ export default function UploadTabs() {
       name: 'Basic Upload',
       icon: FileText,
       description: 'Simple server-side processing for smaller files',
-      color: 'blue'
+      bgColor: 'bg-blue-100',
+      textColor: 'text-blue-600',
+      featureColor: 'text-blue-600'
     },
     {
       id: 'chunked' as TabType,
       name: 'Chunked Upload',
       icon: Package,
       description: 'Break large files into chunks for Vercel compatibility',
-      color: 'orange'
+      bgColor: 'bg-orange-100',
+      textColor: 'text-orange-600',
+      featureColor: 'text-orange-600'
     },
     {
       id: 'client' as TabType,
       name: 'Client-Side',
       icon: Monitor,
       description: 'Process files locally in your browser',
-      color: 'green'
+      bgColor: 'bg-green-100',
+      textColor: 'text-green-600',
+      featureColor: 'text-green-600'
     },
     {
       id: 'server' as TabType,
       name: 'Server-Side',
       icon: Server,
       description: 'Traditional server processing',
-      color: 'purple'
+      bgColor: 'bg-purple-100',
+      textColor: 'text-purple-600',
+      featureColor: 'text-purple-600'
     },
     {
       id: 'youtube' as TabType,
       name: 'YouTube',
       icon: Youtube,
       description: 'Upload video transcripts',
-      color: 'red'
+      bgColor: 'bg-red-100',
+      textColor: 'text-red-600',
+      featureColor: 'text-red-600'
     }
   ]
+
+  const renderFeatures = (tabId: TabType, featureColor: string) => {
+    const features = {
+      basic: ['✓ Simple & fast', '✓ Direct processing', '✓ < 4MB files'],
+      chunked: ['✓ Handles Vercel limits', '✓ 2MB chunks', '✓ Session tracking'],
+      client: ['✓ Browser processing', '✓ Large files', '✓ No server limits'],
+      server: ['✓ Traditional method', '✓ Server processing', '✓ Reliable'],
+      youtube: ['✓ Video transcripts', '✓ AI enhancement', '✓ Multiple formats']
+    }
+
+    return (
+      <div className="space-y-1">
+        {features[tabId].map((feature, index) => (
+          <div key={index} className={featureColor}>{feature}</div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -78,24 +104,8 @@ export default function UploadTabs() {
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <div className={`p-1 rounded transition-colors ${
-                    isActive 
-                      ? (tab.color === 'blue' ? 'bg-blue-100' :
-                         tab.color === 'orange' ? 'bg-orange-100' :
-                         tab.color === 'green' ? 'bg-green-100' :
-                         tab.color === 'purple' ? 'bg-purple-100' :
-                         'bg-red-100')
-                      : 'group-hover:bg-gray-100'
-                  }`}>
-                    <IconComponent className={`w-4 h-4 ${
-                      isActive 
-                        ? (tab.color === 'blue' ? 'text-blue-600' :
-                           tab.color === 'orange' ? 'text-orange-600' :
-                           tab.color === 'green' ? 'text-green-600' :
-                           tab.color === 'purple' ? 'text-purple-600' :
-                           'text-red-600')
-                        : 'text-gray-400 group-hover:text-gray-500'
-                    }`} />
+                  <div className={`p-1 rounded transition-colors ${isActive ? tab.bgColor : 'group-hover:bg-gray-100'}`}>
+                    <IconComponent className={`w-4 h-4 ${isActive ? tab.textColor : 'text-gray-400 group-hover:text-gray-500'}`} />
                   </div>
                   <span>{tab.name}</span>
                 </div>
@@ -109,80 +119,26 @@ export default function UploadTabs() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {tabs.map((tab) => {
           const IconComponent = tab.icon
+          const isActive = activeTab === tab.id
+          
           return (
             <div 
               key={tab.id} 
               className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                activeTab === tab.id 
+                isActive
                   ? 'border-blue-500 bg-blue-50' 
                   : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
               }`}
               onClick={() => setActiveTab(tab.id)}
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2 rounded-lg ${
-                  activeTab === tab.id 
-                    ? (tab.color === 'blue' ? 'bg-blue-100' :
-                       tab.color === 'orange' ? 'bg-orange-100' :
-                       tab.color === 'green' ? 'bg-green-100' :
-                       tab.color === 'purple' ? 'bg-purple-100' :
-                       'bg-red-100')
-                    : 'bg-gray-100'
-                }`}>
-                  <IconComponent className={`w-5 h-5 ${
-                    activeTab === tab.id 
-                      ? (tab.color === 'blue' ? 'text-blue-600' :
-                         tab.color === 'orange' ? 'text-orange-600' :
-                         tab.color === 'green' ? 'text-green-600' :
-                         tab.color === 'purple' ? 'text-purple-600' :
-                         'text-red-600')
-                      : 'text-gray-500'
-                  }`} />
+                <div className={`p-2 rounded-lg ${isActive ? tab.bgColor : 'bg-gray-100'}`}>
+                  <IconComponent className={`w-5 h-5 ${isActive ? tab.textColor : 'text-gray-500'}`} />
                 </div>
                 <h3 className="font-semibold text-gray-900">{tab.name}</h3>
               </div>
               <p className="text-sm text-gray-600 mb-3">{tab.description}</p>
-              
-              {/* Feature highlights */}
-              {tab.id === 'basic' && (
-                <div className="space-y-1">
-                  <div className="text-blue-600">✓ Simple & fast</div>
-                  <div className="text-blue-600">✓ Direct processing</div>
-                  <div className="text-blue-600">✓ < 4MB files</div>
-                </div>
-              )}
-              
-              {tab.id === 'chunked' && (
-                <div className="space-y-1">
-                  <div className="text-orange-600">✓ Handles Vercel limits</div>
-                  <div className="text-orange-600">✓ 2MB chunks</div>
-                  <div className="text-orange-600">✓ Session tracking</div>
-                </div>
-              )}
-              
-              {tab.id === 'client' && (
-                <div className="space-y-1">
-                  <div className="text-green-600">✓ Browser processing</div>
-                  <div className="text-green-600">✓ Large files</div>
-                  <div className="text-green-600">✓ No server limits</div>
-                </div>
-              )}
-              
-              {tab.id === 'server' && (
-                <div className="space-y-1">
-                  <div className="text-purple-600">✓ Traditional method</div>
-                  <div className="text-purple-600">✓ Server processing</div>
-                  <div className="text-purple-600">✓ Reliable</div>
-                </div>
-              )}
-              
-              {tab.id === 'youtube' && (
-                <div className="space-y-1">
-                  <div className="text-red-600">✓ Video transcripts</div>
-                  <div className="text-red-600">✓ AI enhancement</div>
-                  <div className="text-red-600">✓ Multiple formats</div>
-                </div>
-              )}
+              {renderFeatures(tab.id, tab.featureColor)}
             </div>
           )
         })}
