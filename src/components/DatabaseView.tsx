@@ -42,6 +42,10 @@ export function DatabaseView() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterSource, setFilterSource] = useState('')
+  const [filterAuthor, setFilterAuthor] = useState('')
+  const [filterGenre, setFilterGenre] = useState('')
+  const [filterTopic, setFilterTopic] = useState('')
+  const [filterDifficulty, setFilterDifficulty] = useState('')
   const [selectedDocument, setSelectedDocument] = useState<DatabaseDocument | null>(null)
   const [viewMode, setViewMode] = useState<'documents' | 'chunks'>('documents')
   const [currentPage, setCurrentPage] = useState(1)
@@ -104,8 +108,12 @@ export function DatabaseView() {
       
       const matchesType = !filterType || item.doc_type === filterType
       const matchesSource = !filterSource || item.source_type === filterSource
+      const matchesAuthor = !filterAuthor || item.author?.toLowerCase().includes(filterAuthor.toLowerCase())
+      const matchesGenre = !filterGenre || item.genre === filterGenre
+      const matchesTopic = !filterTopic || item.topic?.toLowerCase().includes(filterTopic.toLowerCase())
+      const matchesDifficulty = !filterDifficulty || item.difficulty === filterDifficulty
       
-      return matchesSearch && matchesType && matchesSource
+      return matchesSearch && matchesType && matchesSource && matchesAuthor && matchesGenre && matchesTopic && matchesDifficulty
     })
   }
 
@@ -119,6 +127,10 @@ export function DatabaseView() {
 
   const uniqueTypes = [...new Set(documents.map(doc => doc.doc_type).filter(Boolean))]
   const uniqueSources = [...new Set(documents.map(doc => doc.source_type).filter(Boolean))]
+  const uniqueAuthors = [...new Set(documents.map(doc => doc.author).filter(Boolean))]
+  const uniqueGenres = [...new Set(documents.map(doc => doc.genre).filter(Boolean))]
+  const uniqueTopics = [...new Set(documents.map(doc => doc.topic).filter(Boolean))]
+  const uniqueDifficulties = [...new Set(documents.map(doc => doc.difficulty).filter(Boolean))]
 
   if (loading) {
     return (
@@ -217,24 +229,27 @@ export function DatabaseView() {
       )}
 
       {/* Search and Filters */}
-      <div className="mb-6 flex flex-col sm:flex-row gap-4">
-        <div className="flex-1 relative">
+      <div className="mb-6 space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
-            placeholder={`Search ${viewMode}...`}
+            placeholder={`Search ${viewMode} by title, author, content, topic, or summary...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-        <div className="flex gap-2">
+
+        {/* Filter Controls */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="relative">
             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="pl-10 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
               <option value="">All Types</option>
               {uniqueTypes.map(type => (
@@ -242,16 +257,118 @@ export function DatabaseView() {
               ))}
             </select>
           </div>
+
           <select
             value={filterSource}
             onChange={(e) => setFilterSource(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="">All Sources</option>
-            <option value="pdf_upload">PDFs</option>
-            <option value="youtube_video">Videos</option>
+            {uniqueSources.map(source => (
+              <option key={source} value={source}>{source.replace('_', ' ')}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterAuthor}
+            onChange={(e) => setFilterAuthor(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">All Authors</option>
+            {uniqueAuthors.map(author => (
+              <option key={author} value={author}>{author}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterGenre}
+            onChange={(e) => setFilterGenre(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">All Genres</option>
+            {uniqueGenres.map(genre => (
+              <option key={genre} value={genre}>{genre}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterTopic}
+            onChange={(e) => setFilterTopic(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">All Topics</option>
+            {uniqueTopics.map(topic => (
+              <option key={topic} value={topic}>{topic}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterDifficulty}
+            onChange={(e) => setFilterDifficulty(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">All Difficulties</option>
+            {uniqueDifficulties.map(difficulty => (
+              <option key={difficulty} value={difficulty}>{difficulty}</option>
+            ))}
           </select>
         </div>
+
+        {/* Active Filters Display */}
+        {(filterType || filterSource || filterAuthor || filterGenre || filterTopic || filterDifficulty) && (
+          <div className="flex flex-wrap gap-2">
+            <span className="text-sm text-gray-500">Active filters:</span>
+            {filterType && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                Type: {filterType}
+                <button onClick={() => setFilterType('')} className="hover:bg-blue-200 rounded-full p-0.5">×</button>
+              </span>
+            )}
+            {filterSource && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                Source: {filterSource.replace('_', ' ')}
+                <button onClick={() => setFilterSource('')} className="hover:bg-green-200 rounded-full p-0.5">×</button>
+              </span>
+            )}
+            {filterAuthor && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                Author: {filterAuthor}
+                <button onClick={() => setFilterAuthor('')} className="hover:bg-purple-200 rounded-full p-0.5">×</button>
+              </span>
+            )}
+            {filterGenre && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
+                Genre: {filterGenre}
+                <button onClick={() => setFilterGenre('')} className="hover:bg-orange-200 rounded-full p-0.5">×</button>
+              </span>
+            )}
+            {filterTopic && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs">
+                Topic: {filterTopic}
+                <button onClick={() => setFilterTopic('')} className="hover:bg-indigo-200 rounded-full p-0.5">×</button>
+              </span>
+            )}
+            {filterDifficulty && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-pink-100 text-pink-700 rounded-full text-xs">
+                Difficulty: {filterDifficulty}
+                <button onClick={() => setFilterDifficulty('')} className="hover:bg-pink-200 rounded-full p-0.5">×</button>
+              </span>
+            )}
+            <button 
+              onClick={() => {
+                setFilterType('')
+                setFilterSource('')
+                setFilterAuthor('')
+                setFilterGenre('')
+                setFilterTopic('')
+                setFilterDifficulty('')
+              }}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Clear all filters
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Query Examples */}
