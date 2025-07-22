@@ -180,7 +180,7 @@ export default function Home() {
                     Add Knowledge to PHILO
                   </h3>
                   <p className="text-gray-600 max-w-xl mx-auto">
-                    Upload PDFs to expand PHILO's knowledge base. Smart processing handles any file size automatically.
+                    Upload PDFs to expand PHILO&apos;s knowledge base. Smart processing handles any file size automatically.
                   </p>
                 </div>
                 
