@@ -29,7 +29,7 @@ import { YouTubeUpload } from '@/components/YouTubeUpload'
 import { DatabaseView } from '@/components/DatabaseView'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'youtube' | 'manage' | 'database'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'smart' | 'upload' | 'youtube' | 'manage' | 'database'>('chat')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -48,18 +48,6 @@ export default function Home() {
                 <p className="text-sm text-gray-600">Advanced Document Intelligence Platform</p>
               </div>
             </div>
-            
-            {/* Quick Stats or Actions */}
-            <div className="hidden md:flex items-center gap-4 text-sm text-gray-600">
-              <div className="flex items-center gap-2">
-                <Brain className="w-4 h-4" />
-                <span>AI-Powered</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                <span>Smart Processing</span>
-              </div>
-            </div>
           </div>
         </div>
       </header>
@@ -72,23 +60,39 @@ export default function Home() {
               Welcome to PHILO
             </h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Your intelligent document companion. Upload PDFs, chat with your knowledge base, and discover insights with AI-powered analysis.
+              Your intelligent document companion. Chat with your knowledge base and discover insights with AI-powered analysis.
             </p>
           </div>
         )}
 
         {/* Smart Upload Hero Section */}
-        {activeTab === 'upload' && (
+        {activeTab === 'smart' && (
           <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-3 bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-medium mb-4">
+            <div className="inline-flex items-center gap-3 bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm font-medium mb-4">
               <Upload className="w-4 h-4" />
               Smart Upload System
             </div>
             <h2 className="text-4xl font-bold text-gray-900 mb-3">
-              Upload Documents
+              Smart Document Upload
             </h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Intelligent file processing that automatically handles any size document. Upload PDFs up to 50MB+ with our advanced chunking system.
+              Intelligent file processing that automatically detects file size and uses the optimal upload method. Handles any document size seamlessly.
+            </p>
+          </div>
+        )}
+
+        {/* PDF Upload Hero Section */}
+        {activeTab === 'upload' && (
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-3 bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-medium mb-4">
+              <FileText className="w-4 h-4" />
+              Advanced Upload Options
+            </div>
+            <h2 className="text-4xl font-bold text-gray-900 mb-3">
+              PDF Upload Methods
+            </h2>
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+              Choose from multiple upload methods including chunked upload, client-side processing, and more. Advanced options for power users.
             </p>
           </div>
         )}
@@ -106,11 +110,18 @@ export default function Home() {
                   color: 'blue'
                 },
                 { 
-                  id: 'upload', 
+                  id: 'smart', 
                   label: 'Smart Upload', 
                   icon: Upload, 
-                  description: 'Process Documents',
+                  description: 'Intelligent Processing',
                   color: 'green'
+                },
+                { 
+                  id: 'upload', 
+                  label: 'PDF Upload', 
+                  icon: FileText, 
+                  description: 'Advanced Methods',
+                  color: 'purple'
                 },
                 { 
                   id: 'youtube', 
@@ -168,27 +179,14 @@ export default function Home() {
         {/* Main Content */}
         <div className="max-w-7xl mx-auto">
           {activeTab === 'chat' && (
-            <div className="space-y-8">
-              {/* Quick Upload Card */}
-              <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/50 p-8">
-                <div className="text-center mb-6">
-                  <div className="inline-flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium mb-3">
-                    <Upload className="w-4 h-4" />
-                    Quick Upload
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                    Add Knowledge to PHILO
-                  </h3>
-                  <p className="text-gray-600 max-w-xl mx-auto">
-                    Upload PDFs to expand PHILO&apos;s knowledge base. Smart processing handles any file size automatically.
-                  </p>
-                </div>
-                
-                <SmartUpload />
-              </div>
-              
-              {/* Chat Interface */}
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/50 p-8">
               <UnifiedChatInterface />
+            </div>
+          )}
+          
+          {activeTab === 'smart' && (
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/50 p-8">
+              <SmartUpload />
             </div>
           )}
           
