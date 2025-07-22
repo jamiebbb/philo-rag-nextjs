@@ -177,7 +177,7 @@ export default function UploadTabs() {
             <h4 className="font-semibold text-blue-800 mb-1">Processing Methods Comparison</h4>
             <div className="text-sm text-blue-700 space-y-1">
               <p><strong>Smart Upload:</strong> Automatically detects file size and uses optimal processing method. Files ≤4MB use direct upload, files {'>'} 4MB use storage upload + server processing with pdf-parse.</p>
-              <p><strong>Chunked Upload:</strong> Splits large files into 2MB chunks to bypass Vercel's 4.5MB limit. Uses upload sessions to track progress and reassemble files server-side.</p>
+              <p><strong>Chunked Upload:</strong> Splits large files into 2MB chunks to bypass Vercel&apos;s 4.5MB limit. Uses upload sessions to track progress and reassemble files server-side.</p>
               <p><strong>Client-Side:</strong> Best for large PDF books (10MB+). Processes files in your browser using PDF.js.</p>
               <p><strong>Server-Side:</strong> Best for small documents ({'<'}4MB). Uses Vercel serverless functions.</p>
               <p><strong>YouTube:</strong> Extracts transcripts using SUPADATA API and corrects grammar with GPT-4o-mini.</p>
