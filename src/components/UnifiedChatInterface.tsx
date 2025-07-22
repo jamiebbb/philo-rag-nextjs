@@ -296,14 +296,6 @@ export function UnifiedChatInterface() {
                 </button>
               ))}
             </div>
-            
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-700">
-                <strong>💡 Tip:</strong> I can help with advice requests, book recommendations, memory queries (&quot;name 3 books&quot;), 
-                topic-specific lists (&quot;2 books on banking&quot;), and HR scenarios. 
-                Add &quot;use only uploaded books&quot; to limit responses to your knowledge base.
-              </p>
-            </div>
           </div>
         )}
 
